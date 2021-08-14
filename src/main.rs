@@ -8,6 +8,8 @@ enum Instruction {
     Turn(Direction),
     /// Push a repeat onto the stack
     Repeat(u8),
+    /// Set the color
+    Color(u8),
     /// Only step
     Noop,
     /// Jump to just after the last repeat instruction or pass through if we've exhausted it 
@@ -49,6 +51,7 @@ impl From<u8> for Instruction {
             4 => Self::Turn(Direction::NegY),
             5 => Self::Turn(Direction::NegZ),
             6 => Self::Repeat(v % 5),
+            8 => Self::Color(v % 16),
             7 => Self::Jump,
             _ => Self::Noop,
         }
@@ -62,6 +65,8 @@ struct State {
     dir: Direction,
     /// Position as [x, y, z]
     pos: [i32; 3],
+    /// Color
+    color: u8,
     /// Instruction pointer
     ip: usize,
     /// Stack; consists of 'pointer' and 'remaining repeats'
@@ -73,6 +78,7 @@ impl State {
         Self {
             code,
             dir,
+            color: 0,
             pos,
             ip: 0,
             stack: vec![],
@@ -81,7 +87,7 @@ impl State {
 }
 
 impl Iterator for State {
-    type Item = [i32; 3];
+    type Item = ([i32; 3], u8);
     /// Machine step
     fn next(&mut self) -> Option<Self::Item> {
         let inst = *self.code.get(self.ip)?;
@@ -97,6 +103,7 @@ impl Iterator for State {
                 }
                 _ => (),
             },
+            Instruction::Color(c) => self.color = c,
         }
 
         // Advance instruction pointer
@@ -113,7 +120,7 @@ impl Iterator for State {
         self.pos[1] = self.pos[1] % W;
         self.pos[2] = self.pos[2] % W;
 
-        Some(self.pos)
+        Some((self.pos, self.color))
     }
 }
 
@@ -163,12 +170,12 @@ fn path_pcld(state: State, n: usize) -> DrawData {
 
     let vertices = state
         .take(n)
-        .map(|[x, y, z]| 
+        .map(|([x, y, z], c)| 
             Vertex::new([
                 scale(x), 
                 scale(y), 
                 scale(z)
-            ], [1.; 3])
+            ], color_lut(c))
         )
         .collect::<Vec<Vertex>>();
 
@@ -179,4 +186,19 @@ fn path_pcld(state: State, n: usize) -> DrawData {
         indices,
         primitive: Primitive::Points,
     }
+}
+
+fn color_lut(v: u8) -> [f32; 3] {
+    const COLORS: [[u8; 3]; 7] = [
+        [0xff; 3],
+        [165, 66, 66],
+        [140, 148, 64],
+        [222, 147, 95],
+        [95, 129, 157],
+        [133, 103, 143],
+        [94, 141, 135],
+    ];
+    let [r, g, b] = COLORS[v as usize % COLORS.len()];
+    let s = |c: u8| c as f32 / 255.;
+    [s(r), s(g), s(b)]
 }
