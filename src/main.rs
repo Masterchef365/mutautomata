@@ -1,5 +1,6 @@
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
+use rand::Rng;
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -49,12 +50,10 @@ impl From<u8> for Instruction {
             5 => Self::Turn(Direction::NegZ),
             6 => {
                 let rem = v % 16;
-                if rem < 2 {
+                if rem < 6 {
                     Self::Repeat(rem)
-                } else if rem < 4 {
-                    Self::Jump
                 } else {
-                    Self::Noop
+                    Self::Jump
                 }
             }
             _ => Self::Noop,
@@ -124,8 +123,12 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
 }
 
 fn main() {
-    let arg = std::env::args().skip(1).next().unwrap_or("Hello, world!".into());
-    let code = decode(arg.as_bytes());
+    //let arg = std::env::args().skip(1).next().unwrap_or("Hello, world!".into());
+    //let code = decode(arg.as_bytes());
+
+    let mut rng = rand::thread_rng();
+    let code: Vec<u8> = (0..1000).map(|_| rng.gen()).collect();
+    let code = decode(&code);
     
     /*
     let code = vec![
@@ -150,7 +153,7 @@ fn main() {
     }
     */
 
-    let pcld = path_pcld(state, 800);
+    let pcld = path_pcld(state, 80000);
     draw(vec![pcld], false).expect("Draw failed");
 }
 

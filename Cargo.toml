@@ -7,3 +7,4 @@ edition = "2018"
 
 [dependencies]
 watertender = { path = "../watertender" }
+rand = "0.8"
