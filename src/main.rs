@@ -48,14 +48,8 @@ impl From<u8> for Instruction {
             3 => Self::Turn(Direction::NegX),
             4 => Self::Turn(Direction::NegY),
             5 => Self::Turn(Direction::NegZ),
-            6 => {
-                let rem = v % 16;
-                if rem < 6 {
-                    Self::Repeat(rem)
-                } else {
-                    Self::Jump
-                }
-            }
+            6 => Self::Repeat(v % 5),
+            7 => Self::Jump,
             _ => Self::Noop,
         }
     }
@@ -114,6 +108,11 @@ impl Iterator for State {
         self.pos[1] += dy;
         self.pos[2] += dz;
 
+        const W: i32 = 1000;
+        self.pos[0] = self.pos[0] % W;
+        self.pos[1] = self.pos[1] % W;
+        self.pos[2] = self.pos[2] % W;
+
         Some(self.pos)
     }
 }
@@ -127,7 +126,7 @@ fn main() {
     //let code = decode(arg.as_bytes());
 
     let mut rng = rand::thread_rng();
-    let code: Vec<u8> = (0..1000).map(|_| rng.gen()).collect();
+    let code: Vec<u8> = (0..10_000).map(|_| rng.gen()).collect();
     let code = decode(&code);
     
     /*
@@ -153,13 +152,14 @@ fn main() {
     }
     */
 
-    let pcld = path_pcld(state, 80000);
+    let pcld = path_pcld(state, 200_000);
+    dbg!(pcld.vertices.len());
     draw(vec![pcld], false).expect("Draw failed");
 }
 
 fn path_pcld(state: State, n: usize) -> DrawData {
 
-    let scale = |v: i32| v as f32 / 10.;
+    let scale = |v: i32| v as f32 / 100.;
 
     let vertices = state
         .take(n)
