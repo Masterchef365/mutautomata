@@ -50,9 +50,9 @@ impl From<u8> for Instruction {
             3 => Self::Turn(Direction::NegX),
             4 => Self::Turn(Direction::NegY),
             5 => Self::Turn(Direction::NegZ),
-            6..=8 => Self::Repeat(v % 2),
-            9..=11 => Self::Jump,
-            12 => Self::Color(v % 16),
+            6 => Self::Color(v % 16),
+            7..=9 => Self::Repeat(v % 2),
+            10..=12 => Self::Jump,
             _ => Self::Noop,
         }
     }
@@ -115,7 +115,7 @@ impl Iterator for State {
         self.pos[1] += dy;
         self.pos[2] += dz;
 
-        const W: i32 = 1000;
+        const W: i32 = 1500;
         self.pos[0] = self.pos[0] % W;
         self.pos[1] = self.pos[1] % W;
         self.pos[2] = self.pos[2] % W;
@@ -133,7 +133,7 @@ fn main() {
     //let code = decode(arg.as_bytes());
 
     let mut rng = rand::thread_rng();
-    let code: Vec<u8> = (0..10_000).map(|_| rng.gen()).collect();
+    let code: Vec<u8> = (0..2000).map(|_| rng.gen()).collect();
     let code = decode(&code);
     
     /*
@@ -159,7 +159,7 @@ fn main() {
     }
     */
 
-    let pcld = path_pcld(state, 200_000);
+    let pcld = path_pcld(state, 3_000_000);
     dbg!(pcld.vertices.len());
     draw(vec![pcld], false).expect("Draw failed");
 }
@@ -179,7 +179,7 @@ fn path_pcld(state: State, n: usize) -> DrawData {
         )
         .collect::<Vec<Vertex>>();
 
-    let indices = (0..vertices.len() as u32).collect();
+    let indices = (1u32..).take(vertices.len() * 2).map(|i| i / 2).collect();
 
     DrawData {
         vertices,
