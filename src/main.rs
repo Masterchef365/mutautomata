@@ -50,9 +50,9 @@ impl From<u8> for Instruction {
             3 => Self::Turn(Direction::NegX),
             4 => Self::Turn(Direction::NegY),
             5 => Self::Turn(Direction::NegZ),
-            6 => Self::Repeat(v % 5),
-            8 => Self::Color(v % 16),
-            7 => Self::Jump,
+            6..=8 => Self::Repeat(v % 2),
+            9..=11 => Self::Jump,
+            12 => Self::Color(v % 16),
             _ => Self::Noop,
         }
     }
@@ -184,7 +184,7 @@ fn path_pcld(state: State, n: usize) -> DrawData {
     DrawData {
         vertices,
         indices,
-        primitive: Primitive::Points,
+        primitive: Primitive::Lines,
     }
 }
 
