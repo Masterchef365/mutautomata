@@ -1,11 +1,16 @@
+use watertender::trivial::*;
+use watertender::vertex::Vertex;
+
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
     /// Turn to the specified direction
     Turn(Direction),
-    /// Jump to just after the last repeat instruction or the beginning n times
+    /// Push a repeat onto the stack
     Repeat(u8),
     /// Only step
     Noop,
+    /// Jump to just after the last repeat instruction or pass through if we've exhausted it 
+    Jump,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -46,6 +51,8 @@ impl From<u8> for Instruction {
                 let rem = v % 16;
                 if rem < 2 {
                     Self::Repeat(rem)
+                } else if rem < 4 {
+                    Self::Jump
                 } else {
                     Self::Noop
                 }
@@ -89,12 +96,13 @@ impl Iterator for State {
         match inst {
             Instruction::Turn(dir) => self.dir = dir,
             Instruction::Noop => (),
-            Instruction::Repeat(times) => match self.stack.pop() {
+            Instruction::Repeat(n) => self.stack.push((self.ip, n)),
+            Instruction::Jump => match self.stack.pop() {
                 Some((last_ptr, last_count)) if last_count > 0 => {
                     self.ip = last_ptr;
                     self.stack.push((self.ip, last_count - 1))
                 }
-                _ => self.stack.push((self.ip, times)),
+                _ => (),
             },
         }
 
@@ -118,10 +126,54 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
 fn main() {
     let arg = std::env::args().skip(1).next().unwrap_or("Hello, world!".into());
     let code = decode(arg.as_bytes());
-    dbg!(&code);
+    
+    /*
+    let code = vec![
+        Instruction::Repeat(2),
+        Instruction::Turn(Direction::NegZ),
+        Instruction::Repeat(2),
+        Instruction::Turn(Direction::NegX),
+        Instruction::Jump,
+        Instruction::Turn(Direction::NegY),
+        Instruction::Jump,
+    ];
+    */
+
+    for (ip, text) in code.iter().enumerate() {
+        println!("{}: {:?}", ip, text);
+    }
 
     let state = State::new(code, Direction::X, [0; 3]);
+    /*
     for (step, [x, y, z]) in state.take(80).enumerate() {
         println!("{:>5}: {}, {}, {}", step, x, y, z);
+    }
+    */
+
+    let pcld = path_pcld(state, 800);
+    draw(vec![pcld], false).expect("Draw failed");
+}
+
+fn path_pcld(state: State, n: usize) -> DrawData {
+
+    let scale = |v: i32| v as f32 / 10.;
+
+    let vertices = state
+        .take(n)
+        .map(|[x, y, z]| 
+            Vertex::new([
+                scale(x), 
+                scale(y), 
+                scale(z)
+            ], [1.; 3])
+        )
+        .collect::<Vec<Vertex>>();
+
+    let indices = (0..vertices.len() as u32).collect();
+
+    DrawData {
+        vertices,
+        indices,
+        primitive: Primitive::Points,
     }
 }
