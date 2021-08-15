@@ -168,7 +168,7 @@ fn main() {
     let code_length = 8000;
     let vertex_budget = 3_000_000;
     let max_steps_per_object = 300_000;
-    let max_mutations = 100;
+    let max_mutations = 300;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
