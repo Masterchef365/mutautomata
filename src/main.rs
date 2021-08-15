@@ -168,10 +168,10 @@ fn main() {
     let code_length = 8000;
     let vertex_budget = 3_000_000;
     let max_steps_per_object = 300_000;
-    let max_mutations = 100;
+    let max_mutations = 10;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
-    let mut code = decode(&code);
+    let code = decode(&code);
 
     /*
     let code = vec![
@@ -191,42 +191,50 @@ fn main() {
         }
     }
 
+    let initial_dir = match rng.gen::<u32>() % 6 {
+        0 => Direction::X,
+        1 => Direction::Y,
+        2 => Direction::Z,
+        3 => Direction::NegX,
+        4 => Direction::NegY,
+        _ => Direction::NegZ,
+    };
+
+    let mut last_generation = vec![code];
     let mut objects = vec![];
 
     let mut total_vertices = 0;
-    while total_vertices < vertex_budget {
-        dbg!(total_vertices);
-        let initial_dir = match rng.gen::<u32>() % 6 {
-            0 => Direction::X,
-            1 => Direction::Y,
-            2 => Direction::Z,
-            3 => Direction::NegX,
-            4 => Direction::NegY,
-            _ => Direction::NegZ,
-        };
-
-        let mut state = State::new(code.clone(), initial_dir, [0; 3]);
-
-        /*
-        for (step, [x, y, z]) in state.take(80).enumerate() {
-            println!("{:>5}: {}, {}, {}", step, x, y, z);
+    'outer: for gen_idx in 1.. {
+        println!("Generation {} of size {}", gen_idx, last_generation.len());
+        let mut next_generation = vec![];
+        for genetics in last_generation.drain(..) {
+            for _branch in 1..=2 {
+                let code = mutate(&genetics, &mut rng, max_mutations);
+                let mut state = State::new(code.clone(), initial_dir, [0; 3]);
+                let pcld = plot_lines(&mut state, vertex_budget.min(max_steps_per_object), mode);
+                if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
+                    total_vertices += pcld.vertices.len();
+                    objects.push(pcld);
+                }
+                next_generation.push(code);
+                if total_vertices >= vertex_budget {
+                    break 'outer;
+                }
+            }
         }
-        */
-
-        let pcld = plot_lines(&mut state, vertex_budget.min(max_steps_per_object), mode);
-        if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
-            total_vertices += pcld.vertices.len();
-            objects.push(pcld);
-        }
-
-        // Mutate code
-        for _ in 0..rng.gen_range(1..=max_mutations) {
-            *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
-        }
+        last_generation = next_generation;
     }
 
     let vr = std::env::var("MUT_VR").is_ok();
     draw(objects, vr).expect("Draw failed");
+}
+
+fn mutate(code: &[Instruction], rng: &mut impl Rng, max_mutations: usize) -> Vec<Instruction> {
+    let mut code = code.to_vec();
+    for _ in 0..rng.gen_range(1..=max_mutations) {
+        *code.choose_mut(rng).unwrap() = rng.gen::<u8>().into();
+    }
+    code
 }
 
 #[derive(Copy, Clone)]
