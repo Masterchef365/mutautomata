@@ -129,8 +129,12 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
 }
 
 fn main() {
-    //let arg = std::env::args().skip(1).next().unwrap_or("Hello, world!".into());
-    //let code = decode(arg.as_bytes());
+    let arg = std::env::args().skip(1).next();
+    let mode = match arg.as_ref().map(|s| s.as_str()) {
+        Some("points") => PlotMode::Points,
+        Some("triangles" | "tri") => PlotMode::Triangles,
+        _ => PlotMode::Lines,
+    };
 
     let mut rng = rand::thread_rng();
     let code: Vec<u8> = (0..2000).map(|_| rng.gen()).collect();
@@ -153,18 +157,25 @@ fn main() {
     }
 
     let state = State::new(code, Direction::X, [0; 3]);
+
     /*
     for (step, [x, y, z]) in state.take(80).enumerate() {
         println!("{:>5}: {}, {}, {}", step, x, y, z);
     }
     */
 
-    let pcld = path_pcld(state, 3_000_000);
+    let pcld = plot_lines(state, 30_000_000, mode);
     dbg!(pcld.vertices.len());
     draw(vec![pcld], false).expect("Draw failed");
 }
 
-fn path_pcld(state: State, n: usize) -> DrawData {
+enum PlotMode {
+    Lines,
+    Points,
+    Triangles,
+}
+
+fn plot_lines(state: State, n: usize, mode: PlotMode) -> DrawData {
 
     let scale = |v: i32| v as f32 / 100.;
 
@@ -179,12 +190,28 @@ fn path_pcld(state: State, n: usize) -> DrawData {
         )
         .collect::<Vec<Vertex>>();
 
-    let indices = (1u32..).take(vertices.len() * 2).map(|i| i / 2).collect();
-
-    DrawData {
-        vertices,
-        indices,
-        primitive: Primitive::Lines,
+    match mode {
+        PlotMode::Lines => {
+            DrawData {
+                indices: (1u32..).take(vertices.len() * 2).map(|i| i / 2).collect(),
+                vertices,
+                primitive: Primitive::Lines,
+            }
+        }
+        PlotMode::Points => {
+            DrawData {
+                indices: (0..vertices.len() as u32).collect(),
+                vertices,
+                primitive: Primitive::Points,
+            }
+        }
+        PlotMode::Triangles => {
+            DrawData {
+                indices: (0..vertices.len() as u32).collect(),
+                vertices,
+                primitive: Primitive::Triangles,
+            }
+        }
     }
 }
 
