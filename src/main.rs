@@ -1,6 +1,6 @@
+use rand::Rng;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
-use rand::Rng;
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -10,9 +10,11 @@ enum Instruction {
     Repeat(u8),
     /// Set the color
     Color(u8),
+    /// Plot vertex
+    Plot,
     /// Only step
     Noop,
-    /// Jump to just after the last repeat instruction or pass through if we've exhausted it 
+    /// Jump to just after the last repeat instruction or pass through if we've exhausted it
     Jump,
 }
 
@@ -53,6 +55,7 @@ impl From<u8> for Instruction {
             6 => Self::Color(v % 16),
             7..=9 => Self::Repeat(v % 2),
             10..=12 => Self::Jump,
+            13 => Self::Plot,
             _ => Self::Noop,
         }
     }
@@ -87,15 +90,18 @@ impl State {
 }
 
 impl Iterator for State {
-    type Item = ([i32; 3], u8);
+    type Item = Option<([i32; 3], u8)>;
     /// Machine step
     fn next(&mut self) -> Option<Self::Item> {
         let inst = *self.code.get(self.ip)?;
 
+        let mut plot = false;
+
         match inst {
             Instruction::Turn(dir) => self.dir = dir,
-            Instruction::Noop => (),
+            Instruction::Plot => plot = true,
             Instruction::Repeat(n) => self.stack.push((self.ip, n)),
+            Instruction::Noop => (),
             Instruction::Jump => match self.stack.pop() {
                 Some((last_ptr, last_count)) if last_count > 0 => {
                     self.ip = last_ptr;
@@ -120,7 +126,7 @@ impl Iterator for State {
         self.pos[1] = self.pos[1] % W;
         self.pos[2] = self.pos[2] % W;
 
-        Some((self.pos, self.color))
+        Some(plot.then(|| (self.pos, self.color)))
     }
 }
 
@@ -139,7 +145,7 @@ fn main() {
     let mut rng = rand::thread_rng();
     let code: Vec<u8> = (0..2000).map(|_| rng.gen()).collect();
     let code = decode(&code);
-    
+
     /*
     let code = vec![
         Instruction::Repeat(2),
@@ -164,8 +170,10 @@ fn main() {
     }
     */
 
-    let pcld = plot_lines(state, 30_000_000, mode);
-    dbg!(pcld.vertices.len());
+    let pcld = plot_lines(state, 30000, mode);
+    if pcld.vertices.is_empty() {
+        panic!("No vertices ya dingus");
+    }
     draw(vec![pcld], false).expect("Draw failed");
 }
 
@@ -176,42 +184,30 @@ enum PlotMode {
 }
 
 fn plot_lines(state: State, n: usize, mode: PlotMode) -> DrawData {
-
     let scale = |v: i32| v as f32 / 100.;
 
     let vertices = state
         .take(n)
-        .map(|([x, y, z], c)| 
-            Vertex::new([
-                scale(x), 
-                scale(y), 
-                scale(z)
-            ], color_lut(c))
-        )
+        .filter_map(|c| c)
+        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], color_lut(c)))
         .collect::<Vec<Vertex>>();
 
     match mode {
-        PlotMode::Lines => {
-            DrawData {
-                indices: (1u32..).take(vertices.len() * 2).map(|i| i / 2).collect(),
-                vertices,
-                primitive: Primitive::Lines,
-            }
-        }
-        PlotMode::Points => {
-            DrawData {
-                indices: (0..vertices.len() as u32).collect(),
-                vertices,
-                primitive: Primitive::Points,
-            }
-        }
-        PlotMode::Triangles => {
-            DrawData {
-                indices: (0..vertices.len() as u32).collect(),
-                vertices,
-                primitive: Primitive::Triangles,
-            }
-        }
+        PlotMode::Lines => DrawData {
+            indices: (1u32..).take(vertices.len() * 2).map(|i| i / 2).collect(),
+            vertices,
+            primitive: Primitive::Lines,
+        },
+        PlotMode::Points => DrawData {
+            indices: (0..vertices.len() as u32).collect(),
+            vertices,
+            primitive: Primitive::Points,
+        },
+        PlotMode::Triangles => DrawData {
+            indices: (0..vertices.len() as u32).collect(),
+            vertices,
+            primitive: Primitive::Triangles,
+        },
     }
 }
 
