@@ -166,9 +166,9 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(seed);
 
     let code_length = 8000;
-    let vertex_budget = 300_000;
-    let max_steps_per_object = 30_000;
-    let max_mutations = 200;
+    let vertex_budget = 3_000_000;
+    let max_steps_per_object = 300_000;
+    let max_mutations = 100;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
@@ -225,7 +225,8 @@ fn main() {
         }
     }
 
-    draw(objects, false).expect("Draw failed");
+    let vr = std::env::var("MUT_VR").is_ok();
+    draw(objects, vr).expect("Draw failed");
 }
 
 #[derive(Copy, Clone)]
@@ -264,7 +265,9 @@ fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
 }
 
 fn color_lut(v: u8) -> [f32; 3] {
-    const COLORS: [[u8; 3]; 7] = [
+
+    /*
+    const colors: [[u8; 3]; 7] = [
         [0xff; 3],
         [165, 66, 66],
         [140, 148, 64],
@@ -273,6 +276,19 @@ fn color_lut(v: u8) -> [f32; 3] {
         [133, 103, 143],
         [94, 141, 135],
     ];
+    */
+
+
+    const COLORS: [[u8; 3]; 7] = [
+        [0xff; 3],
+        [0xff, 0, 0],
+        [0, 0xff, 0],
+        [0, 0, 0xff],
+        [0, 0xff, 0xff],
+        [0xff, 0xff, 0],
+        [0xff, 0, 0xff],
+    ];
+
     let [r, g, b] = COLORS[v as usize % COLORS.len()];
     let s = |c: u8| c as f32 / 255.;
     [s(r), s(g), s(b)]
