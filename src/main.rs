@@ -194,16 +194,17 @@ fn main() {
     let mut objects = vec![];
 
     let mut total_vertices = 0;
-    while total_vertices < vertex_budget {
-        let initial_dir = match rng.gen::<u32>() % 6 {
-            0 => Direction::X,
-            1 => Direction::Y,
-            2 => Direction::Z,
-            3 => Direction::NegX,
-            4 => Direction::NegY,
-            _ => Direction::NegZ,
-        };
 
+    let initial_dir = match rng.gen::<u32>() % 6 {
+        0 => Direction::X,
+        1 => Direction::Y,
+        2 => Direction::Z,
+        3 => Direction::NegX,
+        4 => Direction::NegY,
+        _ => Direction::NegZ,
+    };
+
+    while total_vertices < vertex_budget {
         let mut state = State::new(code.clone(), initial_dir, [0; 3]);
 
         /*
@@ -241,7 +242,7 @@ fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
     let vertices = state
         .take(n)
         .filter_map(|c| c)
-        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y) - 8., scale(z)], color_lut(c)))
+        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y) - 4., scale(z)], color_lut(c)))
         .collect::<Vec<Vertex>>();
 
     match mode {
