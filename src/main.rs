@@ -1,4 +1,7 @@
-use rand::Rng;
+//use rand::Rng;
+//use rand::SeedableRng;
+//use rand::rngs::SmallRng;
+use rand::prelude::*;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
 
@@ -135,14 +138,26 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
 }
 
 fn main() {
-    let arg = std::env::args().skip(1).next();
-    let mode = match arg.as_ref().map(|s| s.as_str()) {
+    let mut args = std::env::args().skip(1);
+    let mode = args.next();
+    let seed = args.next();
+    let show_instructions = args.next().is_some();
+
+    let mode = match mode.as_ref().map(|s| s.as_str()) {
         Some("points") => PlotMode::Points,
         Some("triangles" | "tri") => PlotMode::Triangles,
         _ => PlotMode::Lines,
     };
 
-    let mut rng = rand::thread_rng();
+    let seed = match seed {
+        None => rand::thread_rng().gen(),
+        Some(s) => s.parse::<u64>().expect("Failed to parse seed"),
+    };
+
+    println!("Using seed {}", seed);
+
+    let mut rng = SmallRng::seed_from_u64(seed);
+
     let code: Vec<u8> = (0..2000).map(|_| rng.gen()).collect();
     let code = decode(&code);
 
@@ -158,8 +173,10 @@ fn main() {
     ];
     */
 
-    for (ip, text) in code.iter().enumerate() {
-        println!("{}: {:?}", ip, text);
+    if show_instructions {
+        for (ip, text) in code.iter().enumerate() {
+            println!("{}: {:?}", ip, text);
+        }
     }
 
     let state = State::new(code, Direction::X, [0; 3]);
