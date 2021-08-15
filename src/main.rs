@@ -170,7 +170,8 @@ fn main() {
     }
     */
 
-    let pcld = plot_lines(state, 30000, mode);
+    let pcld = plot_lines(state, 30_000_000, mode);
+    dbg!(pcld.vertices.len());
     if pcld.vertices.is_empty() {
         panic!("No vertices ya dingus");
     }
