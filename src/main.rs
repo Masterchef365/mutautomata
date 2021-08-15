@@ -164,10 +164,11 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(seed);
 
     let code_length = 8000;
-    let max_steps = 3_000_000;
+    let mut vertex_budget = 3_000_000;
+    let max_steps_per_object = 300_000;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
-    let code = decode(&code);
+    let mut code = decode(&code);
 
     /*
     let code = vec![
@@ -187,32 +188,44 @@ fn main() {
         }
     }
 
-    let initial_dir = match rng.gen::<u32>() % 6 {
-        0 => Direction::X,
-        1 => Direction::Y,
-        2 => Direction::Z,
-        3 => Direction::NegX,
-        4 => Direction::NegY,
-        _ => Direction::NegZ,
-    };
+    let mut objects = vec![];
 
-    let mut state = State::new(code, initial_dir, [0; 3]);
+    let mut total_vertices = 0;
+    while total_vertices < vertex_budget {
+        dbg!(total_vertices);
+        let initial_dir = match rng.gen::<u32>() % 6 {
+            0 => Direction::X,
+            1 => Direction::Y,
+            2 => Direction::Z,
+            3 => Direction::NegX,
+            4 => Direction::NegY,
+            _ => Direction::NegZ,
+        };
 
-    /*
-    for (step, [x, y, z]) in state.take(80).enumerate() {
-        println!("{:>5}: {}, {}, {}", step, x, y, z);
+        let mut state = State::new(code.clone(), initial_dir, [0; 3]);
+
+        /*
+        for (step, [x, y, z]) in state.take(80).enumerate() {
+            println!("{:>5}: {}, {}, {}", step, x, y, z);
+        }
+        */
+
+        let pcld = plot_lines(&mut state, vertex_budget.min(max_steps_per_object), mode);
+        if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
+            total_vertices += pcld.vertices.len();
+            objects.push(pcld);
+        }
+
+        // Mutate code
+        for _ in 0..100 {
+            *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
+        }
     }
-    */
 
-    let pcld = plot_lines(&mut state, max_steps, mode);
-    dbg!(state.max_ip);
-    dbg!(pcld.vertices.len());
-    if pcld.vertices.is_empty() {
-        panic!("No vertices ya dingus");
-    }
-    draw(vec![pcld], false).expect("Draw failed");
+    draw(objects, false).expect("Draw failed");
 }
 
+#[derive(Copy, Clone)]
 enum PlotMode {
     Lines,
     Points,
