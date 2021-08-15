@@ -129,10 +129,12 @@ impl Iterator for State {
         self.pos[1] += dy;
         self.pos[2] += dz;
 
+        /*
         const W: i32 = 8000;
         self.pos[0] = self.pos[0] % W;
         self.pos[1] = self.pos[1] % W;
         self.pos[2] = self.pos[2] % W;
+        */
 
         Some(self.do_plot.then(|| (self.pos, self.color)))
     }
@@ -164,8 +166,9 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(seed);
 
     let code_length = 8000;
-    let mut vertex_budget = 3_000_000;
-    let max_steps_per_object = 300_000;
+    let vertex_budget = 300_000;
+    let max_steps_per_object = 30_000;
+    let max_mutations = 200;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
@@ -217,7 +220,7 @@ fn main() {
         }
 
         // Mutate code
-        for _ in 0..100 {
+        for _ in 0..rng.gen_range(1..=max_mutations) {
             *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
         }
     }
@@ -243,7 +246,7 @@ fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
 
     match mode {
         PlotMode::Lines => DrawData {
-            indices: (1u32..).take(vertices.len() * 2).map(|i| i / 2).collect(),
+            indices: (1u32..).take((vertices.len() - 1) * 2).map(|i| i / 2).collect(),
             vertices,
             primitive: Primitive::Lines,
         },
