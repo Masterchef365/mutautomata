@@ -48,18 +48,18 @@ impl Into<[i32; 3]> for Direction {
 impl From<u8> for Instruction {
     /// Decode an instruction
     fn from(v: u8) -> Self {
-        match v / 16 {
-            0 => Self::Turn(Direction::X),
-            1 => Self::Turn(Direction::Y),
-            2 => Self::Turn(Direction::Z),
-            3 => Self::Turn(Direction::NegX),
-            4 => Self::Turn(Direction::NegY),
-            5 => Self::Turn(Direction::NegZ),
-            6 => Self::Color(v % 16),
-            7..=9 => Self::Repeat(v % 2),
-            10..=12 => Self::Jump,
-            13 => Self::Plot,
-            _ => Self::Noop,
+        match v % 18 {
+            0 | 1 => Self::Turn(Direction::X),
+            2 | 3 => Self::Turn(Direction::Y),
+            4 | 5 => Self::Turn(Direction::Z),
+            6 | 7 => Self::Turn(Direction::NegX),
+            8 | 9 => Self::Turn(Direction::NegY),
+            10 | 11 => Self::Turn(Direction::NegZ),
+            12 | 13 => Self::Jump,
+            14 => Self::Plot,
+            15 | 16 => Self::Repeat(v / 32),
+            _ => Self::Color(v % 16),
+            //_ => Self::Noop,
         }
     }
 }
@@ -77,6 +77,10 @@ struct State {
     ip: usize,
     /// Stack; consists of 'pointer' and 'remaining repeats'
     stack: Vec<(usize, u8)>,
+    /// Maximum location of the instruction pointser
+    max_ip: usize,
+    /// Whether or not to plot
+    do_plot: bool,
 }
 
 impl State {
@@ -86,7 +90,9 @@ impl State {
             dir,
             color: 0,
             pos,
+            do_plot: true,
             ip: 0,
+            max_ip: 0,
             stack: vec![],
         }
     }
@@ -98,11 +104,9 @@ impl Iterator for State {
     fn next(&mut self) -> Option<Self::Item> {
         let inst = *self.code.get(self.ip)?;
 
-        let mut plot = false;
-
         match inst {
             Instruction::Turn(dir) => self.dir = dir,
-            Instruction::Plot => plot = true,
+            Instruction::Plot => self.do_plot = !self.do_plot,
             Instruction::Repeat(n) => self.stack.push((self.ip, n)),
             Instruction::Noop => (),
             Instruction::Jump => match self.stack.pop() {
@@ -117,6 +121,7 @@ impl Iterator for State {
 
         // Advance instruction pointer
         self.ip += 1;
+        self.max_ip = self.max_ip.max(self.ip);
 
         // Step in the direction
         let [dx, dy, dz]: [i32; 3] = self.dir.into();
@@ -124,12 +129,12 @@ impl Iterator for State {
         self.pos[1] += dy;
         self.pos[2] += dz;
 
-        const W: i32 = 1500;
+        const W: i32 = 8000;
         self.pos[0] = self.pos[0] % W;
         self.pos[1] = self.pos[1] % W;
         self.pos[2] = self.pos[2] % W;
 
-        Some(plot.then(|| (self.pos, self.color)))
+        Some(self.do_plot.then(|| (self.pos, self.color)))
     }
 }
 
@@ -158,7 +163,7 @@ fn main() {
 
     let mut rng = SmallRng::seed_from_u64(seed);
 
-    let code_length = 2000;
+    let code_length = 8000;
     let max_steps = 3_000_000;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
@@ -191,7 +196,7 @@ fn main() {
         _ => Direction::NegZ,
     };
 
-    let state = State::new(code, initial_dir, [0; 3]);
+    let mut state = State::new(code, initial_dir, [0; 3]);
 
     /*
     for (step, [x, y, z]) in state.take(80).enumerate() {
@@ -199,7 +204,8 @@ fn main() {
     }
     */
 
-    let pcld = plot_lines(state, max_steps, mode);
+    let pcld = plot_lines(&mut state, max_steps, mode);
+    dbg!(state.max_ip);
     dbg!(pcld.vertices.len());
     if pcld.vertices.is_empty() {
         panic!("No vertices ya dingus");
@@ -213,7 +219,7 @@ enum PlotMode {
     Triangles,
 }
 
-fn plot_lines(state: State, n: usize, mode: PlotMode) -> DrawData {
+fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
     let scale = |v: i32| v as f32 / 100.;
 
     let vertices = state
