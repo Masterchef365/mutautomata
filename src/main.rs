@@ -158,7 +158,10 @@ fn main() {
 
     let mut rng = SmallRng::seed_from_u64(seed);
 
-    let code: Vec<u8> = (0..2000).map(|_| rng.gen()).collect();
+    let code_length = 2000;
+    let max_steps = 3_000_000;
+
+    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
     let code = decode(&code);
 
     /*
@@ -179,7 +182,16 @@ fn main() {
         }
     }
 
-    let state = State::new(code, Direction::X, [0; 3]);
+    let initial_dir = match rng.gen::<u32>() % 6 {
+        0 => Direction::X,
+        1 => Direction::Y,
+        2 => Direction::Z,
+        3 => Direction::NegX,
+        4 => Direction::NegY,
+        _ => Direction::NegZ,
+    };
+
+    let state = State::new(code, initial_dir, [0; 3]);
 
     /*
     for (step, [x, y, z]) in state.take(80).enumerate() {
@@ -187,7 +199,7 @@ fn main() {
     }
     */
 
-    let pcld = plot_lines(state, 30_000_000, mode);
+    let pcld = plot_lines(state, max_steps, mode);
     dbg!(pcld.vertices.len());
     if pcld.vertices.is_empty() {
         panic!("No vertices ya dingus");
