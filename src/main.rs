@@ -55,9 +55,9 @@ impl From<u8> for Instruction {
             6 | 7 => Self::Turn(Direction::NegX),
             8 | 9 => Self::Turn(Direction::NegY),
             10 | 11 => Self::Turn(Direction::NegZ),
-            12 | 13 => Self::Jump,
+            12 => Self::Jump,
             14 => Self::Plot,
-            15 | 16 => Self::Repeat(v / 32),
+            15 | 16 => Self::Repeat(v / 64),
             _ => Self::Color(v % 16),
             //_ => Self::Noop,
         }
