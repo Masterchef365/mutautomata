@@ -4,6 +4,7 @@
 use rand::prelude::*;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
+use rayon::prelude::*;
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -199,7 +200,7 @@ fn main() {
         let compress_ratio = compressed.len() as f32 / bytes.len() as f32;
         sigmoid(compress_ratio) + sigmoid(cube_cost(steps, 1000.))
     };
-    let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
+    let gene_pool = evolution(cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
     let vertex_budget = 3_000_000;
 
@@ -228,14 +229,16 @@ enum PlotMode {
     Triangles,
 }
 
-fn evolution(rng: &mut impl Rng, cost_fn: impl Fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
+fn evolution(cost_fn: fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
+    let mut rng = rand::thread_rng();
+
     let code_length = 8_000;
-
-    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
-
     let n_offspring = 2; // And one more, which is just the original!
     let n_kept = 10; // Keep up to this many after evaluations
     let n_generations = 200;
+    let max_mutations = 200;
+
+    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
 
     let compute_code_cost = |code: &[u8]| {
         let instructions = decode(&code);
@@ -247,25 +250,25 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn(&[Step]) -> f32, initial_dir: 
     let cost = compute_code_cost(&code);
     let mut gene_pool: Vec<(Vec<u8>, f32)> = vec![(code, cost)];
 
-    let max_mutations = 100;
-
     for gen_idx in 1..=n_generations {
         eprintln!("Computing generation {}, starting with {} gene sets", gen_idx, gene_pool.len());
 
-        let mut new_genes = vec![];
-        for gene_set in &gene_pool {
+        let new_genes = gene_pool.par_iter().map(|gene_set| {
+            let mut rng = rand::thread_rng();
+            let mut new_genes = vec![];
             for _ in 0..n_offspring {
                 // Create mutations
                 let (mut code, _) = gene_set.clone();
                 for _ in 0..rng.gen_range(1..=max_mutations) {
-                    *code.choose_mut(rng).unwrap() = rng.gen::<u8>().into();
+                    *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
                 }
 
                 // Evaluate and add to gene pool
                 let cost = compute_code_cost(&code);
                 new_genes.push((code, cost));
             }
-        }
+            new_genes
+        }).flatten().collect::<Vec<_>>();
 
         gene_pool.extend(new_genes);
 
@@ -279,7 +282,7 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn(&[Step]) -> f32, initial_dir: 
         let lowest_cost = gene_pool.first().unwrap().1;
         dbg!(lowest_cost);
 
-        let saved = gene_pool.choose_multiple(rng, 5).cloned().collect::<Vec<_>>();
+        let saved = gene_pool.choose_multiple(&mut rng, 5).cloned().collect::<Vec<_>>();
         gene_pool.truncate(n_kept);
         gene_pool.extend(saved);
     }
