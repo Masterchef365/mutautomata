@@ -200,11 +200,8 @@ fn main() {
             .iter()
             .map(|x| {
                 let [x, y, z] = x.pos;
-                let cost = 
-                    (x as f32 / 100.).cos() +
-                    (z as f32 / 100.).cos() -
-                    (y as f32 / 100.).cos();
-                cost.abs()
+                let r = 100;
+                (x * x + z * z - r * r).abs() as f32
                 //let fract = (idx % 80) as f32 / 80.;
                 //let diff = add_n(x.pos, neg_n(y.pos));
                 //let dist_sq = dot_n(diff, diff);
@@ -249,7 +246,7 @@ fn evolution(cost_fn: fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [
     let n_offspring = 6; // And one more, which is just the original!
     let n_kept = 45; // Keep up to this many after evaluations
     let n_generations = 1500;
-    let max_mutations = 100;
+    let max_mutations = 150;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
 
