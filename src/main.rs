@@ -166,7 +166,7 @@ fn main() {
         Some(s) => s.parse::<u64>().expect("Failed to parse seed"),
     };
 
-    println!("Using seed {}", seed);
+    eprintln!("Using seed {}", seed);
     
     let mut rng = SmallRng::seed_from_u64(seed);
 
@@ -183,7 +183,7 @@ fn main() {
     let max_steps_per_object = 30_000;
 
     let size = 100.;
-    let cost_fn = |steps: &[Step]| cube_cost(steps, size) - dispersion_score(steps);
+    let cost_fn = |steps: &[Step]| cube_cost(steps, size) + rand::thread_rng().gen_range(-16527200.0..16527200.0);
     let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
     let vertex_budget = 300_000;
@@ -235,7 +235,7 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn(&[Step]) -> f32, initial_dir: 
     let max_mutations = 100;
 
     for gen_idx in 1..=n_generations {
-        println!("Computing generation {}, starting with {} gene sets", gen_idx, gene_pool.len());
+        eprintln!("Computing generation {}, starting with {} gene sets", gen_idx, gene_pool.len());
 
         let mut new_genes = vec![];
         for gene_set in &gene_pool {
@@ -337,14 +337,14 @@ fn cast_3_i32_f32([x, y, z]: [i32; 3]) -> [f32; 3] {
 }
 
 
-fn dispersion_score(steps: &[Step]) -> f32 {
+fn step_pos_stddev(steps: &[Step]) -> f32 {
     let sum = steps.iter().fold([0; 3], |sum, step| add_n(sum, step.pos));
     let mean = div_n(sum, steps.len() as i32);
     let variance = steps.iter().map(|step| {
         let diff = add_n(step.pos, neg_n(mean)); 
         dot_n(diff, diff) as u64
-    }).sum::<u64>();
-    let std_dev = (variance as f32).sqrt();
+    }).sum::<u64>() as f32 / steps.len() as f32;
+    let std_dev = variance.sqrt();
     std_dev
 }
 
