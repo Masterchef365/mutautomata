@@ -99,10 +99,15 @@ impl State {
     }
 }
 
-struct Step {
-    pos: [i32; 3],
-    color: u8,
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct Step {
+    pub pos: [i32; 3],
+    pub color: u8,
 }
+
+unsafe impl bytemuck::Zeroable for Step {}
+unsafe impl bytemuck::Pod for Step {}
 
 impl Iterator for State {
     type Item = Option<Step>;
@@ -183,7 +188,13 @@ fn main() {
     let max_steps_per_object = 30_000;
 
     let size = 100.;
-    let cost_fn = |steps: &[Step]| cube_cost(steps, size) + rand::thread_rng().gen_range(-16527200.0..16527200.0);
+    // Use the compression ratio on the position sequence to determine the score! (Usinge
+    // DEFLATE or some shit)
+    let cost_fn = |steps: &[Step]| {
+        let bytes: &[u8] = bytemuck::cast_slice(steps);
+        let compressed = deflate::deflate_bytes(bytes);
+        -(compressed.len() as f32) / bytes.len() as f32
+    };
     let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
     let vertex_budget = 300_000;
@@ -220,7 +231,7 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn(&[Step]) -> f32, initial_dir: 
 
     let n_offspring = 2; // And one more, which is just the original!
     let n_kept = 10; // Keep up to this many after evaluations
-    let n_generations = 1000;
+    let n_generations = 200;
 
     let compute_code_cost = |code: &[u8]| {
         let instructions = decode(&code);
