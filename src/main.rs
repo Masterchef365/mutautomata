@@ -5,6 +5,7 @@ use rand::prelude::*;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
 use rayon::prelude::*;
+use weezl::{BitOrder, encode::Encoder};
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -196,9 +197,12 @@ fn main() {
     // DEFLATE or some shit)
     let cost_fn = |steps: &[Step]| {
         let bytes: &[u8] = bytemuck::cast_slice(steps);
-        let compressed = deflate::deflate_bytes(bytes);
+        let compressed = Encoder::new(BitOrder::Msb, 9)
+            .encode(&bytes)
+            .unwrap();
         let compress_ratio = compressed.len() as f32 / bytes.len() as f32;
-        sigmoid(compress_ratio) + sigmoid(cube_cost(steps, 1000.))
+        -sigmoid(compress_ratio)
+        //-sigmoid(compress_ratio) + sigmoid(cube_cost(steps, 1000.))
     };
     let gene_pool = evolution(cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
@@ -232,11 +236,11 @@ enum PlotMode {
 fn evolution(cost_fn: fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
     let mut rng = rand::thread_rng();
 
-    let code_length = 8_000;
-    let n_offspring = 2; // And one more, which is just the original!
-    let n_kept = 10; // Keep up to this many after evaluations
+    let code_length = 5_000;
+    let n_offspring = 3; // And one more, which is just the original!
+    let n_kept = 15; // Keep up to this many after evaluations
     let n_generations = 200;
-    let max_mutations = 200;
+    let max_mutations = 100;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
 

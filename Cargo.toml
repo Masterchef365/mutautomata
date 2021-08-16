@@ -8,6 +8,6 @@ edition = "2018"
 [dependencies]
 watertender = { path = "../watertender" }
 rand = { version = "0.8", features = ["small_rng"] }
-deflate = "0.9"
+weezl = "0.1"
 bytemuck = "1.7"
 rayon = "1.5"
