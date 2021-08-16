@@ -196,13 +196,22 @@ fn main() {
     // Use the compression ratio on the position sequence to determine the score! (Usinge
     // DEFLATE or some shit)
     let cost_fn = |steps: &[Step]| {
-        let bytes: &[u8] = bytemuck::cast_slice(steps);
-        let compressed = Encoder::new(BitOrder::Msb, 9)
-            .encode(&bytes)
-            .unwrap();
-        let compress_ratio = compressed.len() as f32 / bytes.len() as f32;
-        -sigmoid(compress_ratio)
-        //-sigmoid(compress_ratio) + sigmoid(cube_cost(steps, 1000.))
+        steps
+            .iter()
+            .map(|x| {
+                let [x, y, z] = x.pos;
+                let cost = 
+                    (x as f32 / 100.).cos() +
+                    (z as f32 / 100.).cos() -
+                    (y as f32 / 100.).cos();
+                cost.abs()
+                //let fract = (idx % 80) as f32 / 80.;
+                //let diff = add_n(x.pos, neg_n(y.pos));
+                //let dist_sq = dot_n(diff, diff);
+                //let dot = dot_n(x.pos, y.pos);
+                //((dot / dist_sq.max(1)) as f32 - fract).abs()
+            })
+            .sum::<f32>()
     };
     let gene_pool = evolution(cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
@@ -236,10 +245,10 @@ enum PlotMode {
 fn evolution(cost_fn: fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
     let mut rng = rand::thread_rng();
 
-    let code_length = 5_000;
-    let n_offspring = 3; // And one more, which is just the original!
-    let n_kept = 15; // Keep up to this many after evaluations
-    let n_generations = 200;
+    let code_length = 8_000;
+    let n_offspring = 6; // And one more, which is just the original!
+    let n_kept = 45; // Keep up to this many after evaluations
+    let n_generations = 1500;
     let max_mutations = 100;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
