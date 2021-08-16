@@ -141,7 +141,7 @@ impl Iterator for State {
         self.pos[2] += dz;
 
         /*
-        const W: i32 = 8000;
+        const W: i32 = 1000;
         self.pos[0] = self.pos[0] % W;
         self.pos[1] = self.pos[1] % W;
         self.pos[2] = self.pos[2] % W;
@@ -153,6 +153,10 @@ impl Iterator for State {
 
 fn decode(v: &[u8]) -> Vec<Instruction> {
     v.iter().map(|&i| i.into()).collect()
+}
+
+fn sigmoid(v: f32) -> f32 {
+    1. / (1. + (-v).exp())
 }
 
 fn main() {
@@ -185,19 +189,19 @@ fn main() {
     };
     let initial_pos = [0; 3];
 
-    let max_steps_per_object = 30_000;
+    let max_steps_per_object = 100_000;
 
-    let size = 100.;
     // Use the compression ratio on the position sequence to determine the score! (Usinge
     // DEFLATE or some shit)
     let cost_fn = |steps: &[Step]| {
         let bytes: &[u8] = bytemuck::cast_slice(steps);
         let compressed = deflate::deflate_bytes(bytes);
-        -(compressed.len() as f32) / bytes.len() as f32
+        let compress_ratio = compressed.len() as f32 / bytes.len() as f32;
+        sigmoid(compress_ratio) + sigmoid(cube_cost(steps, 1000.))
     };
     let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
-    let vertex_budget = 300_000;
+    let vertex_budget = 3_000_000;
 
     let mut objects = vec![];
     let mut total_vertices = 0;
@@ -207,7 +211,7 @@ fn main() {
         let steps = eval(state, max_steps_per_object);
         let geom = plot_lines(&steps, mode);
         total_vertices += geom.vertices.len();
-        if total_vertices > vertex_budget {
+        if dbg!(total_vertices) > vertex_budget {
             break;
         }
         objects.push(geom);
