@@ -182,10 +182,12 @@ fn main() {
 
     let max_steps_per_object = 30_000;
 
-    let radius = 10.;
-    let pos = [0.; 3];
-    let shape = |pt: [f32; 3]| score_sphere(pt, pos, radius);
-    let gene_pool = evolution(&mut rng, shape, initial_dir, initial_pos, max_steps_per_object);
+    //let radius = 10.;
+    //let pos = [0.; 3];
+    //let cost_fn = |pt: [f32; 3]| sphere_cost(pt, pos, radius);
+    let size = 50.;
+    let cost_fn = |pos: [f32; 3]| cube_cost(pos, size);
+    let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
     let vertex_budget = 300_000;
 
@@ -214,7 +216,7 @@ enum PlotMode {
     Triangles,
 }
 
-fn evolution(rng: &mut impl Rng, shape: impl Fn([f32; 3]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
+fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
     let code_length = 8_000;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
@@ -223,16 +225,16 @@ fn evolution(rng: &mut impl Rng, shape: impl Fn([f32; 3]) -> f32, initial_dir: D
     let n_kept = 10; // Keep up to this many after evaluations
     let n_generations = 1000;
 
-    let score_code = |code: &[u8]| {
+    let compute_code_cost = |code: &[u8]| {
         let instructions = decode(&code);
         let state = State::new(instructions, initial_dir, initial_pos);
         let steps = eval(state, max_steps_per_object);
-        let score = score_steps(&steps, &shape);
-        score
+        let cost = compute_cost(&steps, &cost_fn);
+        cost
     };
     
-    let score = score_code(&code);
-    let mut gene_pool: Vec<(Vec<u8>, f32)> = vec![(code, score)];
+    let cost = compute_code_cost(&code);
+    let mut gene_pool: Vec<(Vec<u8>, f32)> = vec![(code, cost)];
 
     let max_mutations = 100;
 
@@ -249,17 +251,17 @@ fn evolution(rng: &mut impl Rng, shape: impl Fn([f32; 3]) -> f32, initial_dir: D
                 }
 
                 // Evaluate and add to gene pool
-                let score = score_code(&code);
-                new_genes.push((code, score));
+                let cost = compute_code_cost(&code);
+                new_genes.push((code, cost));
             }
         }
 
         gene_pool.extend(new_genes);
 
-        // Sort by best score descending
-        gene_pool.sort_by(|(_, score_a), (_, score_b)| 
-            score_a
-                .partial_cmp(score_b)
+        // Sort by best cost descending
+        gene_pool.sort_by(|(_, cost_a), (_, cost_b)| 
+            cost_a
+                .partial_cmp(cost_b)
                 .unwrap_or(std::cmp::Ordering::Equal)
         );
 
@@ -268,10 +270,10 @@ fn evolution(rng: &mut impl Rng, shape: impl Fn([f32; 3]) -> f32, initial_dir: D
         gene_pool.truncate(n_kept);
     }
 
-    gene_pool.into_iter().take(n_kept).map(|(code, _score)| code).collect()
+    gene_pool.into_iter().take(n_kept).map(|(code, _cost)| code).collect()
 }
 
-fn score_sphere(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
+fn sphere_cost(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
     let [x, y, z] = point;
     let [px, py, pz] = pos;
     let squared_dist = (x - px).powf(2.) + (y - py).powf(2.) + (z - pz).powf(2.);
@@ -279,14 +281,28 @@ fn score_sphere(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
     return signed_sq_dist;
 }
 
-fn score_steps(steps: &[Step], shape: impl Fn([f32; 3]) -> f32) -> f32 {
-    let mut score = 0.;
+fn cube_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
+    let in_bounds = |v: f32| v >= -size && v <= size;
+    if in_bounds(x) && in_bounds(y) && in_bounds(z) {
+        //let dist_sq = (x).powf(2.) + (y).powf(2.) + (z).powf(2.);
+        //size * size * size - dist_sq
+        0.0
+    } else {
+        let clamp = |v: f32| v.max(-size).min(size);
+        let [nx, ny, nz] = [clamp(x), clamp(y * 8.), clamp(z)];
+        (x - nx).powf(2.) + (y - ny).powf(2.) + (z - nz).powf(2.)
+    }
+}
+
+
+fn compute_cost(steps: &[Step], cost_fn: impl Fn([f32; 3]) -> f32) -> f32 {
+    let mut cost = 0.;
     for step in steps {
         let [x, y, z] = step.pos;
         let pos = [x as f32, y as f32, z as f32];
-        score += shape(pos);
+        cost += cost_fn(pos);
     }
-    score
+    cost
 }
 
 fn eval(state: State, max_steps: usize) -> Vec<Step> {
