@@ -182,11 +182,8 @@ fn main() {
 
     let max_steps_per_object = 30_000;
 
-    //let radius = 10.;
-    //let pos = [0.; 3];
-    //let cost_fn = |pt: [f32; 3]| sphere_cost(pt, pos, radius);
     let size = 100.;
-    let cost_fn = |pos: [f32; 3]| sine_cost(pos, size);
+    let cost_fn = |steps: &[Step]| cube_cost(steps, size) - dispersion_score(steps);
     let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
     let vertex_budget = 300_000;
@@ -216,7 +213,7 @@ enum PlotMode {
     Triangles,
 }
 
-fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
+fn evolution(rng: &mut impl Rng, cost_fn: impl Fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
     let code_length = 8_000;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
@@ -229,8 +226,7 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir:
         let instructions = decode(&code);
         let state = State::new(instructions, initial_dir, initial_pos);
         let steps = eval(state, max_steps_per_object);
-        let mut cost = compute_cost(&steps, &cost_fn);
-        cost
+        cost_fn(&steps)
     };
     
     let cost = compute_code_cost(&code);
@@ -265,7 +261,8 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir:
                 .unwrap_or(std::cmp::Ordering::Equal)
         );
 
-        dbg!(gene_pool.first().unwrap().1);
+        let lowest_cost = gene_pool.first().unwrap().1;
+        dbg!(lowest_cost);
 
         let saved = gene_pool.choose_multiple(rng, 5).cloned().collect::<Vec<_>>();
         gene_pool.truncate(n_kept);
@@ -275,15 +272,87 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir:
     gene_pool.into_iter().take(n_kept).map(|(code, _cost)| code).collect()
 }
 
-fn sphere_cost(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
+/*
+fn sphere_cost(steps: &[Step], pos: [f32; 3], radius: f32) -> f32 {
+    steps.iter().map(|s| sphere_pt_cost([(s.pos[0] - pos[0]) as f32, s.pos[1] as f32, s.pos[2] as f32], [0.; 3], radius)).sum::<f32>()
+}
+
+fn sphere_pt_cost(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
     let [x, y, z] = point;
     let [px, py, pz] = pos;
     let squared_dist = (x - px).powf(2.) + (y - py).powf(2.) + (z - pz).powf(2.);
     let signed_sq_dist = squared_dist - radius * radius;
-    return signed_sq_dist;
+    if signed_sq_dist < 0. {
+        0.
+    } else {
+        signed_sq_dist
+    }
+}
+*/
+
+fn add_n<T, const N: usize>(x: [T; N], y: [T; N]) -> [T; N] 
+    where T: std::ops::Add<Output=T> + Default + Copy
+{
+    let mut output = [T::default(); N];
+    output.iter_mut().zip(&x).zip(&y).for_each(|((o, x), y)| *o = *x + *y);
+    output
 }
 
-fn cube_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
+fn neg_n<T, const N: usize>(x: [T; N]) -> [T; N] 
+    where T: std::ops::Neg<Output=T> + Default + Copy
+{
+    let mut output = [T::default(); N];
+    output.iter_mut().zip(&x).for_each(|(o, x)| *o = -*x);
+    output
+}
+
+fn dot_n<T, const N: usize>(x: [T; N], y: [T; N]) -> T 
+    where T: std::iter::Sum + std::ops::Mul<Output=T> + Copy
+{
+    x.iter().zip(&y).map(|(x, y)| *x * *y).sum::<T>()
+}
+
+fn div_n<T, const N: usize>(x: [T; N], y: T) -> [T; N]
+    where 
+        T: std::iter::Sum + std::ops::Div<Output=T>,
+        T: Default + Copy
+{
+    let mut output = [T::default(); N];
+    output.iter_mut().zip(&x).for_each(|(o, x)| *o = *x / y);
+    output
+}
+
+fn cast_n<T, U, const N: usize>(x: [T; N]) -> [U; N] 
+    where 
+        T: Into<U> + Copy, 
+        U: Default + Copy
+{
+    let mut output = [U::default(); N];
+    output.iter_mut().zip(&x).for_each(|(o, x)| *o = (*x).into());
+    output
+}
+
+fn cast_3_i32_f32([x, y, z]: [i32; 3]) -> [f32; 3] {
+    [x as f32, y as f32, z as f32]
+}
+
+
+fn dispersion_score(steps: &[Step]) -> f32 {
+    let sum = steps.iter().fold([0; 3], |sum, step| add_n(sum, step.pos));
+    let mean = div_n(sum, steps.len() as i32);
+    let variance = steps.iter().map(|step| {
+        let diff = add_n(step.pos, neg_n(mean)); 
+        dot_n(diff, diff) as u64
+    }).sum::<u64>();
+    let std_dev = (variance as f32).sqrt();
+    std_dev
+}
+
+fn cube_cost(steps: &[Step], size: f32) -> f32 {
+    steps.iter().map(|s| cube_pt_cost(cast_3_i32_f32(s.pos), size)).sum::<f32>()
+}
+
+fn cube_pt_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
     let in_bounds = |v: f32| v >= -size && v <= size;
     if in_bounds(x) && in_bounds(y) && in_bounds(z) {
         //let dist_sq = (x).powf(2.) + (y).powf(2.) + (z).powf(2.);
