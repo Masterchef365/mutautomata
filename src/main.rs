@@ -185,8 +185,8 @@ fn main() {
     //let radius = 10.;
     //let pos = [0.; 3];
     //let cost_fn = |pt: [f32; 3]| sphere_cost(pt, pos, radius);
-    let size = 50.;
-    let cost_fn = |pos: [f32; 3]| cube_cost(pos, size);
+    let size = 100.;
+    let cost_fn = |pos: [f32; 3]| sine_cost(pos, size);
     let gene_pool = evolution(&mut rng, cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
     let vertex_budget = 300_000;
@@ -229,7 +229,7 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir:
         let instructions = decode(&code);
         let state = State::new(instructions, initial_dir, initial_pos);
         let steps = eval(state, max_steps_per_object);
-        let cost = compute_cost(&steps, &cost_fn);
+        let mut cost = compute_cost(&steps, &cost_fn);
         cost
     };
     
@@ -267,7 +267,9 @@ fn evolution(rng: &mut impl Rng, cost_fn: impl Fn([f32; 3]) -> f32, initial_dir:
 
         dbg!(gene_pool.first().unwrap().1);
 
+        let saved = gene_pool.choose_multiple(rng, 5).cloned().collect::<Vec<_>>();
         gene_pool.truncate(n_kept);
+        gene_pool.extend(saved);
     }
 
     gene_pool.into_iter().take(n_kept).map(|(code, _cost)| code).collect()
@@ -293,6 +295,12 @@ fn cube_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
         (x - nx).powf(2.) + (y - ny).powf(2.) + (z - nz).powf(2.)
     }
 }
+
+fn sine_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
+    let h = (x / 100.).cos() + (z / 100.).sin();
+    (h * size - y).abs()
+}
+
 
 
 fn compute_cost(steps: &[Step], cost_fn: impl Fn([f32; 3]) -> f32) -> f32 {
