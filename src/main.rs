@@ -64,6 +64,7 @@ impl From<u8> for Instruction {
     }
 }
 
+#[derive(Clone)]
 struct State {
     /// Instructions
     code: Vec<Instruction>,
@@ -98,8 +99,13 @@ impl State {
     }
 }
 
+struct Step {
+    pos: [i32; 3],
+    color: u8,
+}
+
 impl Iterator for State {
-    type Item = Option<([i32; 3], u8)>;
+    type Item = Option<Step>;
     /// Machine step
     fn next(&mut self) -> Option<Self::Item> {
         let inst = *self.code.get(self.ip)?;
@@ -136,7 +142,7 @@ impl Iterator for State {
         self.pos[2] = self.pos[2] % W;
         */
 
-        Some(self.do_plot.then(|| (self.pos, self.color)))
+        Some(self.do_plot.then(|| Step { pos: self.pos, color: self.color }))
     }
 }
 
@@ -148,7 +154,6 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next();
     let seed = args.next();
-    let show_instructions = args.next().is_some();
 
     let mode = match mode.as_ref().map(|s| s.as_str()) {
         Some("points") => PlotMode::Points,
@@ -162,67 +167,40 @@ fn main() {
     };
 
     println!("Using seed {}", seed);
-
+    
     let mut rng = SmallRng::seed_from_u64(seed);
 
-    let code_length = 80_000;
-    let vertex_budget = 300_000;
+    let initial_dir = match rng.gen::<u32>() % 6 {
+        0 => Direction::X,
+        1 => Direction::Y,
+        2 => Direction::Z,
+        3 => Direction::NegX,
+        4 => Direction::NegY,
+        _ => Direction::NegZ,
+    };
+    let initial_pos = [0; 3];
+
     let max_steps_per_object = 30_000;
-    let max_mutations = 500;
 
-    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
-    let mut code = decode(&code);
+    let radius = 10.;
+    let pos = [0.; 3];
+    let shape = |pt: [f32; 3]| score_sphere(pt, pos, radius);
+    let gene_pool = evolution(&mut rng, shape, initial_dir, initial_pos, max_steps_per_object);
 
-    /*
-    let code = vec![
-        Instruction::Repeat(2),
-        Instruction::Turn(Direction::NegZ),
-        Instruction::Repeat(2),
-        Instruction::Turn(Direction::NegX),
-        Instruction::Jump,
-        Instruction::Turn(Direction::NegY),
-        Instruction::Jump,
-    ];
-    */
-
-    if show_instructions {
-        for (ip, text) in code.iter().enumerate() {
-            println!("{}: {:?}", ip, text);
-        }
-    }
+    let vertex_budget = 300_000;
 
     let mut objects = vec![];
-
     let mut total_vertices = 0;
-    while total_vertices < vertex_budget {
-        dbg!(total_vertices);
-        let initial_dir = match rng.gen::<u32>() % 6 {
-            0 => Direction::X,
-            1 => Direction::Y,
-            2 => Direction::Z,
-            3 => Direction::NegX,
-            4 => Direction::NegY,
-            _ => Direction::NegZ,
-        };
-
-        let mut state = State::new(code.clone(), initial_dir, [0; 3]);
-
-        /*
-        for (step, [x, y, z]) in state.take(80).enumerate() {
-            println!("{:>5}: {}, {}, {}", step, x, y, z);
+    for code in gene_pool {
+        let code = decode(&code);
+        let state = State::new(code, initial_dir, initial_pos);
+        let steps = eval(state, max_steps_per_object);
+        let geom = plot_lines(&steps, mode);
+        total_vertices += geom.vertices.len();
+        if total_vertices > vertex_budget {
+            break;
         }
-        */
-
-        let pcld = plot_lines(&mut state, vertex_budget.min(max_steps_per_object), mode);
-        if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
-            total_vertices += pcld.vertices.len();
-            objects.push(pcld);
-        }
-
-        // Mutate code
-        for _ in 0..rng.gen_range(1..=max_mutations) {
-            *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
-        }
+        objects.push(geom);
     }
 
     let vr = std::env::var("MUT_VR").is_ok();
@@ -236,13 +214,92 @@ enum PlotMode {
     Triangles,
 }
 
-fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
+fn evolution(rng: &mut impl Rng, shape: impl Fn([f32; 3]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
+    let code_length = 8_000;
+
+    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
+
+    let n_offspring = 2; // And one more, which is just the original!
+    let n_kept = 10; // Keep up to this many after evaluations
+    let n_generations = 1000;
+
+    let score_code = |code: &[u8]| {
+        let instructions = decode(&code);
+        let state = State::new(instructions, initial_dir, initial_pos);
+        let steps = eval(state, max_steps_per_object);
+        let score = score_steps(&steps, &shape);
+        score
+    };
+    
+    let score = score_code(&code);
+    let mut gene_pool: Vec<(Vec<u8>, f32)> = vec![(code, score)];
+
+    let max_mutations = 100;
+
+    for gen_idx in 1..=n_generations {
+        println!("Computing generation {}, starting with {} gene sets", gen_idx, gene_pool.len());
+
+        let mut new_genes = vec![];
+        for gene_set in &gene_pool {
+            for _ in 0..n_offspring {
+                // Create mutations
+                let (mut code, _) = gene_set.clone();
+                for _ in 0..rng.gen_range(1..=max_mutations) {
+                    *code.choose_mut(rng).unwrap() = rng.gen::<u8>().into();
+                }
+
+                // Evaluate and add to gene pool
+                let score = score_code(&code);
+                new_genes.push((code, score));
+            }
+        }
+
+        gene_pool.extend(new_genes);
+
+        // Sort by best score descending
+        gene_pool.sort_by(|(_, score_a), (_, score_b)| 
+            score_a
+                .partial_cmp(score_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        );
+
+        dbg!(gene_pool.first().unwrap().1);
+
+        gene_pool.truncate(n_kept);
+    }
+
+    gene_pool.into_iter().take(n_kept).map(|(code, _score)| code).collect()
+}
+
+fn score_sphere(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
+    let [x, y, z] = point;
+    let [px, py, pz] = pos;
+    let squared_dist = (x - px).powf(2.) + (y - py).powf(2.) + (z - pz).powf(2.);
+    let signed_sq_dist = squared_dist - radius * radius;
+    return signed_sq_dist;
+}
+
+fn score_steps(steps: &[Step], shape: impl Fn([f32; 3]) -> f32) -> f32 {
+    let mut score = 0.;
+    for step in steps {
+        let [x, y, z] = step.pos;
+        let pos = [x as f32, y as f32, z as f32];
+        score += shape(pos);
+    }
+    score
+}
+
+fn eval(state: State, max_steps: usize) -> Vec<Step> {
+    state.take(max_steps).filter_map(|c| c).collect()
+}
+
+
+fn plot_lines(steps: &[Step], mode: PlotMode) -> DrawData {
     let scale = |v: i32| v as f32 / 100.;
 
-    let vertices = state
-        .take(n)
-        .filter_map(|c| c)
-        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], color_lut(c)))
+    let vertices = steps
+        .iter()
+        .map(|&Step { pos: [x, y, z], color }| Vertex::new([scale(x), scale(y), scale(z)], color_lut(color)))
         .collect::<Vec<Vertex>>();
 
     match mode {
