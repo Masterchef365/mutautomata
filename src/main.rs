@@ -166,7 +166,7 @@ fn main() {
     let mut rng = SmallRng::seed_from_u64(seed);
 
     let code_length = 8000;
-    let vertex_budget = 3_000_000;
+    let vertex_budget = 8_000_000;
     let max_steps_per_object = 300_000;
     let max_mutations = 50;
 
