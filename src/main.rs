@@ -168,7 +168,7 @@ fn main() {
     let code_length = 8000;
     let vertex_budget = 3_000_000;
     let max_steps_per_object = 300_000;
-    let max_mutations = 100;
+    let max_mutations = 50;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
@@ -242,7 +242,7 @@ fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
     let vertices = state
         .take(n)
         .filter_map(|c| c)
-        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], color_lut(c)))
+        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], [c as f32; 3]))
         .collect::<Vec<Vertex>>();
 
     match mode {
@@ -264,6 +264,7 @@ fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
     }
 }
 
+/*
 fn color_lut(v: u8) -> [f32; 3] {
 
     /*
@@ -278,18 +279,8 @@ fn color_lut(v: u8) -> [f32; 3] {
     ];
     */
 
-
-    const COLORS: [[u8; 3]; 7] = [
-        [0xff; 3],
-        [0xff, 0x44, 0],
-        [0x44, 0xff, 0],
-        [0, 0x44, 0xff],
-        [0x44, 0xff, 0xff],
-        [0xff, 0xff, 0],
-        [0xff, 0, 0xff],
-    ];
-
     let [r, g, b] = COLORS[v as usize % COLORS.len()];
     let s = |c: u8| c as f32 / 255.;
     [s(r), s(g), s(b)]
 }
+*/
