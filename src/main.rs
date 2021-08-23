@@ -314,7 +314,7 @@ fn random_color_lut(
     max_bright: f32
 ) -> Vec<[f32; 3]> {
     let mut colors = vec![];
-    for _ in 0..rng.gen_range(0..max_colors) {
+    for _ in 0..rng.gen_range(1..max_colors) {
         let mut color = [
             rng.gen_range(min_bright..max_bright),
             rng.gen_range(min_bright..max_bright),
