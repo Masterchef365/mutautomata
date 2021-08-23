@@ -219,7 +219,6 @@ fn main() {
 
     let mut total_vertices = 0;
     while total_vertices < opt.vertex_budget {
-        dbg!(total_vertices);
         let initial_dir = match rng.gen::<u32>() % 6 {
             0 => Direction::X,
             1 => Direction::Y,
@@ -230,12 +229,6 @@ fn main() {
         };
 
         let mut state = State::new(code.clone(), initial_dir, [0; 3]);
-
-        /*
-        for (step, [x, y, z]) in state.take(80).enumerate() {
-            println!("{:>5}: {}, {}, {}", step, x, y, z);
-        }
-        */
 
         let pcld = plot_lines(&mut state, opt.vertex_budget.min(opt.max_steps_per_object), opt.plot_mode);
         if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
