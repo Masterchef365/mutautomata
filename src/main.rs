@@ -30,6 +30,14 @@ enum Direction {
     NegZ,
 }
 
+fn hash(s: &str) -> u64 {
+    let mut hash = 7890u64;
+    for b in s.bytes() {
+        hash += hash.rotate_left(5) + u64::from(b);
+    }
+    hash
+}
+
 impl Into<[i32; 3]> for Direction {
     /// Decode a direction
     fn into(self) -> [i32; 3] {
@@ -173,7 +181,10 @@ struct Opt {
     min_bright: f32, 
 
     #[structopt(long, default_value="1.0")]
-    max_bright: f32
+    max_bright: f32,
+
+    #[structopt(short = "y", long)]
+    str_seed: Option<String>,
 }
 
 /*
@@ -211,7 +222,11 @@ struct rOpt {
 fn main() {
     let opt = Opt::from_args();
 
-    let seed = opt.seed.unwrap_or(rand::thread_rng().gen());
+    let str_seed = opt.str_seed;
+    let seed = opt.seed
+        .or_else(|| str_seed.map(|s| hash(&s)))
+        .unwrap_or(rand::thread_rng().gen());
+
     println!("Using seed {}", seed);
 
     let mut rng = SmallRng::seed_from_u64(seed);
