@@ -164,6 +164,16 @@ struct Opt {
     /// Supply a seed
     #[structopt(short, long)]
     seed: Option<u64>,
+
+    /// Maximum number of colors
+    #[structopt(long, default_value="10")]
+    max_colors: u32, 
+
+    #[structopt(long, default_value="0.0")]
+    min_bright: f32, 
+
+    #[structopt(long, default_value="1.0")]
+    max_bright: f32
 }
 
 /*
@@ -217,6 +227,8 @@ fn main() {
 
     let mut objects = vec![];
 
+    let colors = random_color_lut(&mut rng, opt.max_colors, opt.min_bright, opt.max_bright);
+
     let mut total_vertices = 0;
     while total_vertices < opt.vertex_budget {
         let initial_dir = match rng.gen::<u32>() % 6 {
@@ -230,7 +242,8 @@ fn main() {
 
         let mut state = State::new(code.clone(), initial_dir, [0; 3]);
 
-        let pcld = plot_lines(&mut state, opt.vertex_budget.min(opt.max_steps_per_object), opt.plot_mode);
+        let n_verts = opt.vertex_budget.min(opt.max_steps_per_object);
+        let pcld = plot_lines(&mut state, n_verts, opt.plot_mode, &colors);
         if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
             total_vertices += pcld.vertices.len();
             objects.push(pcld);
@@ -266,13 +279,13 @@ impl FromStr for PlotMode {
     }
 }
 
-fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
+fn plot_lines(state: &mut State, n: usize, mode: PlotMode, colors: &[[f32; 3]]) -> DrawData {
     let scale = |v: i32| v as f32 / 100.;
 
     let vertices = state
         .take(n)
         .filter_map(|c| c)
-        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], color_lut(c)))
+        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], colors[c as usize % colors.len()]))
         .collect::<Vec<Vertex>>();
 
     match mode {
@@ -294,32 +307,22 @@ fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
     }
 }
 
-fn color_lut(v: u8) -> [f32; 3] {
-
-    /*
-    const colors: [[u8; 3]; 7] = [
-        [0xff; 3],
-        [165, 66, 66],
-        [140, 148, 64],
-        [222, 147, 95],
-        [95, 129, 157],
-        [133, 103, 143],
-        [94, 141, 135],
-    ];
-    */
-
-
-    const COLORS: [[u8; 3]; 7] = [
-        [0xff; 3],
-        [0xff, 0, 0],
-        [0, 0xff, 0],
-        [0, 0, 0xff],
-        [0, 0xff, 0xff],
-        [0xff, 0xff, 0],
-        [0xff, 0, 0xff],
-    ];
-
-    let [r, g, b] = COLORS[v as usize % COLORS.len()];
-    let s = |c: u8| c as f32 / 255.;
-    [s(r), s(g), s(b)]
+fn random_color_lut(
+    rng: &mut impl Rng, 
+    max_colors: u32, 
+    min_bright: f32, 
+    max_bright: f32
+) -> Vec<[f32; 3]> {
+    let mut colors = vec![];
+    for _ in 0..rng.gen_range(0..max_colors) {
+        let mut color = [
+            rng.gen_range(min_bright..max_bright),
+            rng.gen_range(min_bright..max_bright),
+            rng.gen_range(min_bright..max_bright),
+        ];
+        let idx = rng.gen_range(0..color.len());
+        color[idx] = 0.;
+        colors.push(color);
+    }
+    colors
 }
