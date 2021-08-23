@@ -4,6 +4,7 @@
 use rand::prelude::*;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
+use structopt::StructOpt;
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -15,8 +16,6 @@ enum Instruction {
     Color(u8),
     /// Plot vertex
     Plot,
-    /// Only step
-    Noop,
     /// Jump to just after the last repeat instruction or pass through if we've exhausted it
     Jump,
 }
@@ -59,7 +58,6 @@ impl From<u8> for Instruction {
             14 => Self::Plot,
             15 | 16 => Self::Repeat(v / 64),
             _ => Self::Color(v % 16),
-            //_ => Self::Noop,
         }
     }
 }
@@ -108,7 +106,6 @@ impl Iterator for State {
             Instruction::Turn(dir) => self.dir = dir,
             Instruction::Plot => self.do_plot = !self.do_plot,
             Instruction::Repeat(n) => self.stack.push((self.ip, n)),
-            Instruction::Noop => (),
             Instruction::Jump => match self.stack.pop() {
                 Some((last_ptr, last_count)) if last_count > 0 => {
                     self.ip = last_ptr;
@@ -129,13 +126,6 @@ impl Iterator for State {
         self.pos[1] += dy;
         self.pos[2] += dz;
 
-        /*
-        const W: i32 = 8000;
-        self.pos[0] = self.pos[0] % W;
-        self.pos[1] = self.pos[1] % W;
-        self.pos[2] = self.pos[2] % W;
-        */
-
         Some(self.do_plot.then(|| (self.pos, self.color)))
     }
 }
@@ -144,48 +134,82 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
     v.iter().map(|&i| i.into()).collect()
 }
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "MutAutomata", about = "Builder of spindly structures and such")]
+struct Opt {
+    /// Size of the genome
+    #[structopt(short, long, default_value="8000")]
+    genome_length: usize,
+
+    /// Max vertices to display
+    #[structopt(short, long, default_value="3000000")]
+    vertex_budget: usize,
+
+    /// Max steps which can be taken for rendering each shape
+    #[structopt(short = "m", long, default_value="300000")]
+    max_steps_per_object: usize,
+
+    /// Maximum number of mutations per child
+    #[structopt(short = "u", long, default_value="100")]
+    max_mutations: usize,
+
+    /// Plot using this primitive/mode
+    #[structopt(short, long, default_value="lines")]
+    plot_mode: PlotMode,
+
+    /// Show instructions of the seed
+    #[structopt(long)]
+    show_instructions: bool,
+
+    /// Supply a seed
+    #[structopt(short, long)]
+    seed: Option<u64>,
+}
+
+/*
+#[derive(Debug, StructOpt)]
+#[structopt(name = "MutAutomata", about = "Builder of spindly structures and such")]
+struct rOpt {
+    /// Activate debug mode
+    // short and long flags (-d, --debug) will be deduced from the field's name
+    #[structopt(short, long)]
+    debug: bool,
+
+    /// Set speed
+    // we don't want to name it "speed", need to look smart
+    #[structopt(short = "v", long = "velocity", default_value = "42")]
+    speed: f64,
+
+    /// Input file
+    #[structopt(parse(from_os_str))]
+    input: PathBuf,
+
+    /// Output file, stdout if not present
+    #[structopt(parse(from_os_str))]
+    output: Option<PathBuf>,
+
+    /// Where to write the output: to `stdout` or `file`
+    #[structopt(short)]
+    out_type: String,
+
+    /// File name: only required when `out-type` is set to `file`
+    #[structopt(name = "FILE", required_if("out-type", "file"))]
+    file_name: Option<String>,
+}
+*/
+
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let mode = args.next();
-    let seed = args.next();
-    let show_instructions = args.next().is_some();
+    let opt = Opt::from_args();
 
-    let mode = match mode.as_ref().map(|s| s.as_str()) {
-        Some("points") => PlotMode::Points,
-        Some("triangles" | "tri") => PlotMode::Triangles,
-        _ => PlotMode::Lines,
-    };
-
-    let seed = match seed {
-        None => rand::thread_rng().gen(),
-        Some(s) => s.parse::<u64>().expect("Failed to parse seed"),
-    };
-
+    let seed = opt.seed.unwrap_or(rand::thread_rng().gen());
     println!("Using seed {}", seed);
 
     let mut rng = SmallRng::seed_from_u64(seed);
 
-    let code_length = 8000;
-    let vertex_budget = 3_000_000;
-    let max_steps_per_object = 300_000;
-    let max_mutations = 100;
-
-    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
+    let code: Vec<u8> = (0..opt.genome_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
 
-    /*
-    let code = vec![
-        Instruction::Repeat(2),
-        Instruction::Turn(Direction::NegZ),
-        Instruction::Repeat(2),
-        Instruction::Turn(Direction::NegX),
-        Instruction::Jump,
-        Instruction::Turn(Direction::NegY),
-        Instruction::Jump,
-    ];
-    */
-
-    if show_instructions {
+    if opt.show_instructions {
         for (ip, text) in code.iter().enumerate() {
             println!("{}: {:?}", ip, text);
         }
@@ -194,7 +218,7 @@ fn main() {
     let mut objects = vec![];
 
     let mut total_vertices = 0;
-    while total_vertices < vertex_budget {
+    while total_vertices < opt.vertex_budget {
         dbg!(total_vertices);
         let initial_dir = match rng.gen::<u32>() % 6 {
             0 => Direction::X,
@@ -213,14 +237,14 @@ fn main() {
         }
         */
 
-        let pcld = plot_lines(&mut state, vertex_budget.min(max_steps_per_object), mode);
+        let pcld = plot_lines(&mut state, opt.vertex_budget.min(opt.max_steps_per_object), opt.plot_mode);
         if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
             total_vertices += pcld.vertices.len();
             objects.push(pcld);
         }
 
         // Mutate code
-        for _ in 0..rng.gen_range(1..=max_mutations) {
+        for _ in 0..rng.gen_range(1..=opt.max_mutations) {
             *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
         }
     }
@@ -229,11 +253,24 @@ fn main() {
     draw(objects, vr).expect("Draw failed");
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum PlotMode {
     Lines,
     Points,
     Triangles,
+}
+
+use std::str::FromStr;
+impl FromStr for PlotMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "lines" | "l" => Ok(Self::Lines),
+            "points" | "p" => Ok(Self::Points),
+            "triangles" | "tris" | "t" => Ok(Self::Triangles),
+            _ => Err(format!("\"s\" did not match lines|points|tris")),
+        }
+    }
 }
 
 fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
