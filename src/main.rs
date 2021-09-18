@@ -2,10 +2,10 @@
 //use rand::SeedableRng;
 //use rand::rngs::SmallRng;
 use rand::prelude::*;
+use rayon::prelude::*;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
-use rayon::prelude::*;
-use weezl::{BitOrder, encode::Encoder};
+use weezl::{encode::Encoder, BitOrder};
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -149,7 +149,10 @@ impl Iterator for State {
         self.pos[2] = self.pos[2] % W;
         */
 
-        Some(self.do_plot.then(|| Step { pos: self.pos, color: self.color }))
+        Some(self.do_plot.then(|| Step {
+            pos: self.pos,
+            color: self.color,
+        }))
     }
 }
 
@@ -159,6 +162,28 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
 
 fn sigmoid(v: f32) -> f32 {
     1. / (1. + (-v).exp())
+}
+
+fn inside_aabb(pos: [i32; 3], min: [i32; 3], max: [i32; 3]) -> bool {
+    pos.into_iter()
+        .zip(min)
+        .zip(max)
+        .all(|((&p, i), a)| p >= i && p <= a)
+}
+
+fn aabb_center([ix, iy, iz]: [i32; 3], [ax, ay, az]: [i32; 3]) -> [i32; 3] {
+    [
+        (ix + ax) / 2,
+        (iy + ay) / 2,
+        (iz + az) / 2,
+    ]
+}
+
+fn distance_sq([px, py, pz]: [i32; 3], [qx, qy, qz]: [i32; 3]) -> i32 {
+    let dx = px - qx;
+    let dy = py - qy;
+    let dz = pz - qz;
+    (dx * dx + dy * dy + dz * dz)
 }
 
 fn main() {
@@ -178,7 +203,7 @@ fn main() {
     };
 
     eprintln!("Using seed {}", seed);
-    
+
     let mut rng = SmallRng::seed_from_u64(seed);
 
     let initial_dir = match rng.gen::<u32>() % 6 {
@@ -196,19 +221,25 @@ fn main() {
     // Use the compression ratio on the position sequence to determine the score! (Usinge
     // DEFLATE or some shit)
     let cost_fn = |steps: &[Step]| {
-        steps
-            .iter()
-            .map(|x| {
-                let [x, y, z] = x.pos;
-                let r = 100;
-                (x * x + z * z - r * r).abs() as f32
-                //let fract = (idx % 80) as f32 / 80.;
-                //let diff = add_n(x.pos, neg_n(y.pos));
-                //let dist_sq = dot_n(diff, diff);
-                //let dot = dot_n(x.pos, y.pos);
-                //((dot / dist_sq.max(1)) as f32 - fract).abs()
-            })
-            .sum::<f32>()
+        let mut map = std::collections::HashSet::new();
+
+        let min = [200, 200, 200];
+        let max = [400, 800, 100];
+        let center = aabb_center(min, max);
+
+        let mut cost = 0.0;
+
+        for step in steps {
+            if !map.insert(step.pos) {
+                cost += 1.0;
+            }
+
+            if !inside_aabb(step.pos, min, max) {
+                cost += (distance_sq(center, step.pos).max(1) as f32).ln();
+            }
+        }
+
+        cost
     };
     let gene_pool = evolution(cost_fn, initial_dir, initial_pos, max_steps_per_object);
 
@@ -239,7 +270,12 @@ enum PlotMode {
     Triangles,
 }
 
-fn evolution(cost_fn: fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [i32; 3], max_steps_per_object: usize) -> Vec<Vec<u8>> {
+fn evolution(
+    cost_fn: fn(&[Step]) -> f32,
+    initial_dir: Direction,
+    initial_pos: [i32; 3],
+    max_steps_per_object: usize,
+) -> Vec<Vec<u8>> {
     let mut rng = rand::thread_rng();
 
     let code_length = 8_000;
@@ -256,48 +292,63 @@ fn evolution(cost_fn: fn(&[Step]) -> f32, initial_dir: Direction, initial_pos: [
         let steps = eval(state, max_steps_per_object);
         cost_fn(&steps)
     };
-    
+
     let cost = compute_code_cost(&code);
     let mut gene_pool: Vec<(Vec<u8>, f32)> = vec![(code, cost)];
 
     for gen_idx in 1..=n_generations {
-        eprintln!("Computing generation {}, starting with {} gene sets", gen_idx, gene_pool.len());
+        eprintln!(
+            "Computing generation {}, starting with {} gene sets",
+            gen_idx,
+            gene_pool.len()
+        );
 
-        let new_genes = gene_pool.par_iter().map(|gene_set| {
-            let mut rng = rand::thread_rng();
-            let mut new_genes = vec![];
-            for _ in 0..n_offspring {
-                // Create mutations
-                let (mut code, _) = gene_set.clone();
-                for _ in 0..rng.gen_range(1..=max_mutations) {
-                    *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
+        let new_genes = gene_pool
+            .par_iter()
+            .map(|gene_set| {
+                let mut rng = rand::thread_rng();
+                let mut new_genes = vec![];
+                for _ in 0..n_offspring {
+                    // Create mutations
+                    let (mut code, _) = gene_set.clone();
+                    for _ in 0..rng.gen_range(1..=max_mutations) {
+                        *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
+                    }
+
+                    // Evaluate and add to gene pool
+                    let cost = compute_code_cost(&code);
+                    new_genes.push((code, cost));
                 }
-
-                // Evaluate and add to gene pool
-                let cost = compute_code_cost(&code);
-                new_genes.push((code, cost));
-            }
-            new_genes
-        }).flatten().collect::<Vec<_>>();
+                new_genes
+            })
+            .flatten()
+            .collect::<Vec<_>>();
 
         gene_pool.extend(new_genes);
 
         // Sort by best cost descending
-        gene_pool.sort_by(|(_, cost_a), (_, cost_b)| 
+        gene_pool.sort_by(|(_, cost_a), (_, cost_b)| {
             cost_a
                 .partial_cmp(cost_b)
                 .unwrap_or(std::cmp::Ordering::Equal)
-        );
+        });
 
         let lowest_cost = gene_pool.first().unwrap().1;
         dbg!(lowest_cost);
 
-        let saved = gene_pool.choose_multiple(&mut rng, 5).cloned().collect::<Vec<_>>();
+        let saved = gene_pool
+            .choose_multiple(&mut rng, 5)
+            .cloned()
+            .collect::<Vec<_>>();
         gene_pool.truncate(n_kept);
         gene_pool.extend(saved);
     }
 
-    gene_pool.into_iter().take(n_kept).map(|(code, _cost)| code).collect()
+    gene_pool
+        .into_iter()
+        .take(n_kept)
+        .map(|(code, _cost)| code)
+        .collect()
 }
 
 /*
@@ -318,45 +369,55 @@ fn sphere_pt_cost(point: [f32; 3], pos: [f32; 3], radius: f32) -> f32 {
 }
 */
 
-fn add_n<T, const N: usize>(x: [T; N], y: [T; N]) -> [T; N] 
-    where T: std::ops::Add<Output=T> + Default + Copy
+fn add_n<T, const N: usize>(x: [T; N], y: [T; N]) -> [T; N]
+where
+    T: std::ops::Add<Output = T> + Default + Copy,
 {
     let mut output = [T::default(); N];
-    output.iter_mut().zip(&x).zip(&y).for_each(|((o, x), y)| *o = *x + *y);
+    output
+        .iter_mut()
+        .zip(&x)
+        .zip(&y)
+        .for_each(|((o, x), y)| *o = *x + *y);
     output
 }
 
-fn neg_n<T, const N: usize>(x: [T; N]) -> [T; N] 
-    where T: std::ops::Neg<Output=T> + Default + Copy
+fn neg_n<T, const N: usize>(x: [T; N]) -> [T; N]
+where
+    T: std::ops::Neg<Output = T> + Default + Copy,
 {
     let mut output = [T::default(); N];
     output.iter_mut().zip(&x).for_each(|(o, x)| *o = -*x);
     output
 }
 
-fn dot_n<T, const N: usize>(x: [T; N], y: [T; N]) -> T 
-    where T: std::iter::Sum + std::ops::Mul<Output=T> + Copy
+fn dot_n<T, const N: usize>(x: [T; N], y: [T; N]) -> T
+where
+    T: std::iter::Sum + std::ops::Mul<Output = T> + Copy,
 {
     x.iter().zip(&y).map(|(x, y)| *x * *y).sum::<T>()
 }
 
 fn div_n<T, const N: usize>(x: [T; N], y: T) -> [T; N]
-    where 
-        T: std::iter::Sum + std::ops::Div<Output=T>,
-        T: Default + Copy
+where
+    T: std::iter::Sum + std::ops::Div<Output = T>,
+    T: Default + Copy,
 {
     let mut output = [T::default(); N];
     output.iter_mut().zip(&x).for_each(|(o, x)| *o = *x / y);
     output
 }
 
-fn cast_n<T, U, const N: usize>(x: [T; N]) -> [U; N] 
-    where 
-        T: Into<U> + Copy, 
-        U: Default + Copy
+fn cast_n<T, U, const N: usize>(x: [T; N]) -> [U; N]
+where
+    T: Into<U> + Copy,
+    U: Default + Copy,
 {
     let mut output = [U::default(); N];
-    output.iter_mut().zip(&x).for_each(|(o, x)| *o = (*x).into());
+    output
+        .iter_mut()
+        .zip(&x)
+        .for_each(|(o, x)| *o = (*x).into());
     output
 }
 
@@ -364,20 +425,26 @@ fn cast_3_i32_f32([x, y, z]: [i32; 3]) -> [f32; 3] {
     [x as f32, y as f32, z as f32]
 }
 
-
 fn step_pos_stddev(steps: &[Step]) -> f32 {
     let sum = steps.iter().fold([0; 3], |sum, step| add_n(sum, step.pos));
     let mean = div_n(sum, steps.len() as i32);
-    let variance = steps.iter().map(|step| {
-        let diff = add_n(step.pos, neg_n(mean)); 
-        dot_n(diff, diff) as u64
-    }).sum::<u64>() as f32 / steps.len() as f32;
+    let variance = steps
+        .iter()
+        .map(|step| {
+            let diff = add_n(step.pos, neg_n(mean));
+            dot_n(diff, diff) as u64
+        })
+        .sum::<u64>() as f32
+        / steps.len() as f32;
     let std_dev = variance.sqrt();
     std_dev
 }
 
 fn cube_cost(steps: &[Step], size: f32) -> f32 {
-    steps.iter().map(|s| cube_pt_cost(cast_3_i32_f32(s.pos), size)).sum::<f32>()
+    steps
+        .iter()
+        .map(|s| cube_pt_cost(cast_3_i32_f32(s.pos), size))
+        .sum::<f32>()
 }
 
 fn cube_pt_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
@@ -398,8 +465,6 @@ fn sine_cost([x, y, z]: [f32; 3], size: f32) -> f32 {
     (h * size - y).abs()
 }
 
-
-
 fn compute_cost(steps: &[Step], cost_fn: impl Fn([f32; 3]) -> f32) -> f32 {
     let mut cost = 0.;
     for step in steps {
@@ -414,18 +479,25 @@ fn eval(state: State, max_steps: usize) -> Vec<Step> {
     state.take(max_steps).filter_map(|c| c).collect()
 }
 
-
 fn plot_lines(steps: &[Step], mode: PlotMode) -> DrawData {
     let scale = |v: i32| v as f32 / 100.;
 
     let vertices = steps
         .iter()
-        .map(|&Step { pos: [x, y, z], color }| Vertex::new([scale(x), scale(y), scale(z)], color_lut(color)))
+        .map(
+            |&Step {
+                 pos: [x, y, z],
+                 color,
+             }| Vertex::new([scale(x), scale(y), scale(z)], color_lut(color)),
+        )
         .collect::<Vec<Vertex>>();
 
     match mode {
         PlotMode::Lines => DrawData {
-            indices: (1u32..).take((vertices.len() - 1) * 2).map(|i| i / 2).collect(),
+            indices: (1u32..)
+                .take((vertices.len() - 1) * 2)
+                .map(|i| i / 2)
+                .collect(),
             vertices,
             primitive: Primitive::Lines,
         },
@@ -443,7 +515,6 @@ fn plot_lines(steps: &[Step], mode: PlotMode) -> DrawData {
 }
 
 fn color_lut(v: u8) -> [f32; 3] {
-
     /*
     const colors: [[u8; 3]; 7] = [
         [0xff; 3],
@@ -455,7 +526,6 @@ fn color_lut(v: u8) -> [f32; 3] {
         [94, 141, 135],
     ];
     */
-
 
     const COLORS: [[u8; 3]; 7] = [
         [0xff; 3],
