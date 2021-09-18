@@ -316,7 +316,7 @@ fn evolution(
     let code_length = 8_000;
     let n_offspring = 6; // And one more, which is just the original!
     let n_kept = 45; // Keep up to this many after evaluations
-    let n_generations = 400;
+    let n_generations = 1400;
     let max_mutations = 150;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
@@ -587,7 +587,7 @@ fn image_plane(buf: &[u8], width: usize, size: f32) -> DrawData {
     let mut idx = 0;
 
     for row in 0..height {
-        for col in 0..height {
+        for col in 0..width {
             let pixel = buf[idx];
 
             let color = [pixel as f32 / 255.; 3];
