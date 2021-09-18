@@ -7,6 +7,8 @@ use watertender::trivial::*;
 use watertender::vertex::Vertex;
 use weezl::{encode::Encoder, BitOrder};
 
+const SCALE: i32 = 100;
+
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
     /// Turn to the specified direction
@@ -168,7 +170,7 @@ fn inside_aabb(pos: [i32; 3], min: [i32; 3], max: [i32; 3]) -> bool {
     pos.into_iter()
         .zip(min)
         .zip(max)
-        .all(|((&p, i), a)| p >= i && p <= a)
+        .all(|((&p, i), a)| p >= i && p < a)
 }
 
 fn aabb_center([ix, iy, iz]: [i32; 3], [ax, ay, az]: [i32; 3]) -> [i32; 3] {
@@ -183,11 +185,26 @@ fn distance_sq([px, py, pz]: [i32; 3], [qx, qy, qz]: [i32; 3]) -> i32 {
     let dx = px - qx;
     let dy = py - qy;
     let dz = pz - qz;
-    (dx * dx + dy * dy + dz * dz)
+    dx * dx + dy * dy + dz * dz
 }
 
 fn main() {
     let mut args = std::env::args().skip(1);
+    let image_path = args.next().expect("Requires image path");
+
+    let decoder = std::fs::File::open(image_path).expect("Image open failed");
+    let decoder = png::Decoder::new(decoder);
+    let mut reader = decoder.read_info().unwrap();
+    // Allocate the output buffer.
+    let mut buf = vec![0; reader.output_buffer_size()];
+    // Read the next frame. An APNG might contain multiple frames.
+    let info = reader.next_frame(&mut buf).unwrap();
+
+    assert_eq!(info.color_type, png::ColorType::Grayscale);
+    assert_eq!(info.bit_depth, png::BitDepth::Eight);
+
+    let width = 10;
+
     let mode = args.next();
     let seed = args.next();
 
@@ -220,11 +237,21 @@ fn main() {
 
     // Use the compression ratio on the position sequence to determine the score! (Usinge
     // DEFLATE or some shit)
-    let cost_fn = |steps: &[Step]| {
+
+    let bin_size = 100;
+
+    let image_data = image_plane(&buf, info.width as _, bin_size as f32 / SCALE as f32);
+
+    let cost_fn = move |steps: &[Step]| {
         let mut map = std::collections::HashSet::new();
 
-        let min = [200, 200, 200];
-        let max = [400, 800, 100];
+        let min = [0; 3];
+        let max = [
+            info.width as i32 * bin_size, 
+            bin_size, 
+            info.height as i32 * bin_size
+        ];
+
         let center = aabb_center(min, max);
 
         let mut cost = 0.0;
@@ -236,6 +263,13 @@ fn main() {
 
             if !inside_aabb(step.pos, min, max) {
                 cost += (distance_sq(center, step.pos).max(1) as f32).ln();
+            } else {
+                let [x, _, z] = step.pos;
+                let x = x / bin_size;
+                let y = z / bin_size;
+
+                let bin = buf[y as usize * info.width as usize + x as usize];
+                cost -= bin as f32 / 255.0;
             }
         }
 
@@ -245,7 +279,7 @@ fn main() {
 
     let vertex_budget = 3_000_000;
 
-    let mut objects = vec![];
+    let mut objects = vec![image_data];
     let mut total_vertices = 0;
     for code in gene_pool {
         let code = decode(&code);
@@ -260,6 +294,7 @@ fn main() {
     }
 
     let vr = std::env::var("MUT_VR").is_ok();
+
     draw(objects, vr).expect("Draw failed");
 }
 
@@ -271,7 +306,7 @@ enum PlotMode {
 }
 
 fn evolution(
-    cost_fn: fn(&[Step]) -> f32,
+    cost_fn: impl Fn(&[Step]) -> f32 + Sync,
     initial_dir: Direction,
     initial_pos: [i32; 3],
     max_steps_per_object: usize,
@@ -281,7 +316,7 @@ fn evolution(
     let code_length = 8_000;
     let n_offspring = 6; // And one more, which is just the original!
     let n_kept = 45; // Keep up to this many after evaluations
-    let n_generations = 1500;
+    let n_generations = 400;
     let max_mutations = 150;
 
     let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
@@ -480,7 +515,7 @@ fn eval(state: State, max_steps: usize) -> Vec<Step> {
 }
 
 fn plot_lines(steps: &[Step], mode: PlotMode) -> DrawData {
-    let scale = |v: i32| v as f32 / 100.;
+    let scale = |v: i32| v as f32 / SCALE as f32;
 
     let vertices = steps
         .iter()
@@ -540,4 +575,41 @@ fn color_lut(v: u8) -> [f32; 3] {
     let [r, g, b] = COLORS[v as usize % COLORS.len()];
     let s = |c: u8| c as f32 / 255.;
     [s(r), s(g), s(b)]
+}
+
+fn image_plane(buf: &[u8], width: usize, size: f32) -> DrawData {
+    assert_eq!(buf.len() % width, 0);
+    let height = buf.len() / width;
+
+    let mut vertices = vec![];
+    let mut indices: Vec<u32> = vec![];
+
+    let mut idx = 0;
+
+    for row in 0..height {
+        for col in 0..height {
+            let pixel = buf[idx];
+
+            let color = [pixel as f32 / 255.; 3];
+
+            let x = col as f32 * size;
+            let z = row as f32 * size;
+
+            let base = vertices.len() as u32;
+            vertices.push(Vertex::new([x, 0., z], color));
+            vertices.push(Vertex::new([x + size, 0., z], color));
+            vertices.push(Vertex::new([x + size, 0., z + size], color));
+            vertices.push(Vertex::new([x, 0., z + size], color));
+
+            indices.extend([3, 1, 0, 3, 2, 1].iter().map(|i| i + base));
+
+            idx += 1;
+        }
+    }
+
+    DrawData {
+        indices,
+        vertices,
+        primitive: Primitive::Triangles,
+    }
 }
