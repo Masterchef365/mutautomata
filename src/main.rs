@@ -82,10 +82,12 @@ struct State {
     max_ip: usize,
     /// Whether or not to plot
     do_plot: bool,
+    /// Coordinate wraparound, if any
+    wrap: Option<usize>,
 }
 
 impl State {
-    fn new(code: Vec<Instruction>, dir: Direction, pos: [i32; 3]) -> Self {
+    fn new(code: Vec<Instruction>, dir: Direction, pos: [i32; 3], wrap: Option<usize>) -> Self {
         Self {
             code,
             dir,
@@ -95,6 +97,7 @@ impl State {
             ip: 0,
             max_ip: 0,
             stack: vec![],
+            wrap,
         }
     }
 }
@@ -130,12 +133,21 @@ impl Iterator for State {
         self.pos[1] += dy;
         self.pos[2] += dz;
 
-        /*
-        const W: i32 = 8000;
-        self.pos[0] = self.pos[0] % W;
-        self.pos[1] = self.pos[1] % W;
-        self.pos[2] = self.pos[2] % W;
-        */
+        if let Some(wrap) = self.wrap {
+            let wrap = wrap as i32;
+            let wrap = |pos: i32| if pos.abs() > wrap { 
+                if pos > 0 {
+                    pos - wrap
+                } else {
+                    pos + wrap
+                }
+            } else {
+                pos
+            };
+            self.pos[0] = wrap(self.pos[0]);
+            self.pos[1] = wrap(self.pos[1]);
+            self.pos[2] = wrap(self.pos[2]);
+        }
 
         Some(self.do_plot.then(|| (self.pos, self.color)))
     }
@@ -179,10 +191,14 @@ struct Opt {
     /// Use vr!
     #[structopt(short = "r", long)]
     vr: bool,
+
+    /// Wrap coordinates by this value
+    #[structopt(short, long)]
+    wrap: Option<usize>,
 }
 
 fn main() {
-    let mut args = Opt::from_args();
+    let args = Opt::from_args();
 
     let seed = args.seed.unwrap_or_else(|| rand::thread_rng().gen());
     let mut rng = SmallRng::seed_from_u64(seed);
@@ -210,7 +226,7 @@ fn main() {
             _ => Direction::NegZ,
         };
 
-        let mut state = State::new(code.clone(), initial_dir, [0; 3]);
+        let mut state = State::new(code.clone(), initial_dir, [0; 3], args.wrap);
 
         /*
         for (step, [x, y, z]) in state.take(80).enumerate() {
