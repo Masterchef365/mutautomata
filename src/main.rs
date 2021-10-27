@@ -4,6 +4,7 @@
 use rand::prelude::*;
 use watertender::trivial::*;
 use watertender::vertex::Vertex;
+use structopt::StructOpt;
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -144,48 +145,53 @@ fn decode(v: &[u8]) -> Vec<Instruction> {
     v.iter().map(|&i| i.into()).collect()
 }
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "example", about = "An example of StructOpt usage.")]
+struct Opt {
+    /// Maximum program length
+    #[structopt(short = "l", long, default_value = "8000")]
+    code_length: i32,
+
+    /// Maximum number of vertices to be produced
+    #[structopt(short, long, default_value = "3000000")]
+    vertex_budget: usize,
+
+    /// Maximum number of program steps per run
+    #[structopt(short = "p", long, default_value = "300000")]
+    max_steps_per_object: usize,
+
+    /// Maximum number of mutations
+    #[structopt(short = "u", long, default_value = "100")]
+    max_mutations: i32,
+
+    /// RNG seed
+    #[structopt(short, long)]
+    seed: Option<u64>,
+
+    /// Print the instructions used
+    #[structopt(long)]
+    show_instructions: bool,
+
+    /// The primitive to use (one of lines, triangles, or points)
+    #[structopt(short = "p", long, default_value = "lines")]
+    primitive: PlotMode,
+
+    /// Use vr!
+    #[structopt(short = "r", long)]
+    vr: bool,
+}
+
 fn main() {
-    let mut args = std::env::args().skip(1);
-    let mode = args.next();
-    let seed = args.next();
-    let show_instructions = args.next().is_some();
+    let mut args = Opt::from_args();
 
-    let mode = match mode.as_ref().map(|s| s.as_str()) {
-        Some("points") => PlotMode::Points,
-        Some("triangles" | "tri") => PlotMode::Triangles,
-        _ => PlotMode::Lines,
-    };
-
-    let seed = match seed {
-        None => rand::thread_rng().gen(),
-        Some(s) => s.parse::<u64>().expect("Failed to parse seed"),
-    };
-
+    let seed = args.seed.unwrap_or_else(|| rand::thread_rng().gen());
+    let mut rng = SmallRng::seed_from_u64(seed);
     println!("Using seed {}", seed);
 
-    let mut rng = SmallRng::seed_from_u64(seed);
-
-    let code_length = 8000;
-    let vertex_budget = 3_000_000;
-    let max_steps_per_object = 300_000;
-    let max_mutations = 100;
-
-    let code: Vec<u8> = (0..code_length).map(|_| rng.gen()).collect();
+    let code: Vec<u8> = (0..args.code_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
 
-    /*
-    let code = vec![
-        Instruction::Repeat(2),
-        Instruction::Turn(Direction::NegZ),
-        Instruction::Repeat(2),
-        Instruction::Turn(Direction::NegX),
-        Instruction::Jump,
-        Instruction::Turn(Direction::NegY),
-        Instruction::Jump,
-    ];
-    */
-
-    if show_instructions {
+    if args.show_instructions {
         for (ip, text) in code.iter().enumerate() {
             println!("{}: {:?}", ip, text);
         }
@@ -194,8 +200,7 @@ fn main() {
     let mut objects = vec![];
 
     let mut total_vertices = 0;
-    while total_vertices < vertex_budget {
-        dbg!(total_vertices);
+    while total_vertices < args.vertex_budget {
         let initial_dir = match rng.gen::<u32>() % 6 {
             0 => Direction::X,
             1 => Direction::Y,
@@ -213,27 +218,38 @@ fn main() {
         }
         */
 
-        let pcld = plot_lines(&mut state, vertex_budget.min(max_steps_per_object), mode);
+        let pcld = plot_lines(&mut state, args.vertex_budget.min(args.max_steps_per_object), args.primitive);
         if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
             total_vertices += pcld.vertices.len();
             objects.push(pcld);
         }
 
         // Mutate code
-        for _ in 0..rng.gen_range(1..=max_mutations) {
+        for _ in 0..rng.gen_range(1..=args.max_mutations) {
             *code.choose_mut(&mut rng).unwrap() = rng.gen::<u8>().into();
         }
     }
 
-    let vr = std::env::var("MUT_VR").is_ok();
-    draw(objects, vr).expect("Draw failed");
+    draw(objects, args.vr).expect("Draw failed");
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum PlotMode {
     Lines,
     Points,
     Triangles,
+}
+
+impl std::str::FromStr for PlotMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
+            "points" | "point" | "p" => Self::Points,
+            "triangles" | "triangle" | "tri" | "t" => Self::Triangles,
+            "lines" | "line" | "l" => Self::Lines,
+            other => return Err(format!("{} is not one of points, lines, or triangles.", other)),
+        })
+    }
 }
 
 fn plot_lines(state: &mut State, n: usize, mode: PlotMode) -> DrawData {
