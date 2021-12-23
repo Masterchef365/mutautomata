@@ -1,6 +1,17 @@
 # Mutautomata
 This is a pattern generator based on a random set of instructions, which are manipulated in small ways and drawn several times. The plots this program makes are three-dimensional, and can optionally be displayed for VR. Without any arguments, a random seed is picked. 
 
+```
+cargo run --release -- -s 9359628770
+```
+![Example](example.png)
+
+
+```
+cargo run --release -- -s 10210725752218678800
+```
+![Example](example2.png)
+
 
 ```sh
 cargo run --release -- --help
@@ -33,14 +44,3 @@ OPTIONS:
     -y, --str-seed <str-seed>                            Seed, as a string
     -v, --vertex-budget <vertex-budget>                  Max vertices to display [default: 3000000]
 ```
-
-```
-cargo run --release -- -s 9359628770
-```
-![Example](example.png)
-
-
-```
-cargo run --release -- -s 10210725752218678800
-```
-![Example](example2.png)
