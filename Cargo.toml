@@ -1,5 +1,5 @@
 [package]
-name = "mini-machines"
+name = "mutautomata"
 version = "0.1.0"
 edition = "2018"
 
