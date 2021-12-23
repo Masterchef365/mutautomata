@@ -44,14 +44,15 @@ pub struct Opt {
 
     /// Maximum brightness of colors
     #[structopt(long, default_value="1.0")]
-    max_bright: f32,
+    pub max_bright: f32,
 
     /// Seed, as a string
     #[structopt(short = "y", long)]
-    str_seed: Option<String>,
+    pub str_seed: Option<String>,
 }
 
 pub fn generate(opt: Opt) -> Vec<DrawData> {
+    // Choose a seed
     let str_seed = opt.str_seed;
     let seed = opt.seed
         .or_else(|| str_seed.map(|s| hash(&s)))
@@ -61,6 +62,7 @@ pub fn generate(opt: Opt) -> Vec<DrawData> {
 
     let mut rng = SmallRng::seed_from_u64(seed);
 
+    // Create a random code
     let code: Vec<u8> = (0..opt.genome_length).map(|_| rng.gen()).collect();
     let mut code = decode(&code);
 
@@ -70,12 +72,14 @@ pub fn generate(opt: Opt) -> Vec<DrawData> {
         }
     }
 
-    let mut objects = vec![];
-
+    // Pick a palette
     let colors = random_color_lut(&mut rng, opt.max_colors, opt.min_bright, opt.max_bright);
 
+    // Generate paths
+    let mut objects = vec![];
     let mut total_vertices = 0;
     while total_vertices < opt.vertex_budget {
+        // Pick a random direction
         let initial_dir = match rng.gen::<u32>() % 6 {
             0 => Direction::X,
             1 => Direction::Y,
@@ -87,6 +91,7 @@ pub fn generate(opt: Opt) -> Vec<DrawData> {
 
         let mut state = State::new(code.clone(), initial_dir, [0; 3]);
 
+        // Plot
         let n_verts = opt.vertex_budget.min(opt.max_steps_per_object);
         let pcld = plot_lines(&mut state, n_verts, opt.plot_mode, &colors);
         if !pcld.indices.is_empty() && !pcld.vertices.is_empty() {
@@ -102,83 +107,6 @@ pub fn generate(opt: Opt) -> Vec<DrawData> {
 
     objects
 }
-
-fn hash(s: &str) -> u64 {
-    let mut hash = 7890u64;
-    for b in s.bytes() {
-        hash += hash.rotate_left(5) + u64::from(b);
-    }
-    hash
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum PlotMode {
-    Lines,
-    Points,
-    Triangles,
-}
-
-use std::str::FromStr;
-impl FromStr for PlotMode {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "lines" | "l" => Ok(Self::Lines),
-            "points" | "p" => Ok(Self::Points),
-            "triangles" | "tris" | "t" => Ok(Self::Triangles),
-            _ => Err(format!("\"s\" did not match lines|points|tris")),
-        }
-    }
-}
-
-fn plot_lines(state: &mut State, n: usize, mode: PlotMode, colors: &[[f32; 3]]) -> DrawData {
-    let scale = |v: i32| v as f32 / 100.;
-
-    let vertices = state
-        .take(n)
-        .filter_map(|c| c)
-        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], colors[c as usize % colors.len()]))
-        .collect::<Vec<Vertex>>();
-
-    match mode {
-        PlotMode::Lines => DrawData {
-            indices: (1u32..).take((vertices.len() - 1) * 2).map(|i| i / 2).collect(),
-            vertices,
-            primitive: Primitive::Lines,
-        },
-        PlotMode::Points => DrawData {
-            indices: (0..vertices.len() as u32).collect(),
-            vertices,
-            primitive: Primitive::Points,
-        },
-        PlotMode::Triangles => DrawData {
-            indices: (0..vertices.len() as u32).collect(),
-            vertices,
-            primitive: Primitive::Triangles,
-        },
-    }
-}
-
-fn random_color_lut(
-    rng: &mut impl Rng, 
-    max_colors: u32, 
-    min_bright: f32, 
-    max_bright: f32
-) -> Vec<[f32; 3]> {
-    let mut colors = vec![];
-    for _ in 0..rng.gen_range(1..max_colors) {
-        let mut color = [
-            rng.gen_range(min_bright..max_bright),
-            rng.gen_range(min_bright..max_bright),
-            rng.gen_range(min_bright..max_bright),
-        ];
-        let idx = rng.gen_range(0..color.len());
-        color[idx] = 0.;
-        colors.push(color);
-    }
-    colors
-}
-
 
 #[derive(Debug, Copy, Clone)]
 enum Instruction {
@@ -272,6 +200,79 @@ impl Iterator for State {
     }
 }
 
+/// Create a hash of the given string
+fn hash(s: &str) -> u64 {
+    let mut hash = 7890u64;
+    for b in s.bytes() {
+        hash += hash.rotate_left(5) + u64::from(b);
+    }
+    hash
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum PlotMode {
+    Lines,
+    Points,
+}
+
+use std::str::FromStr;
+impl FromStr for PlotMode {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "lines" | "l" => Ok(Self::Lines),
+            "points" | "p" => Ok(Self::Points),
+            _ => Err(format!("\"{}\" did not match lines or points", s)),
+        }
+    }
+}
+
+/// Plot the path of the given state
+fn plot_lines(state: &mut State, n: usize, mode: PlotMode, colors: &[[f32; 3]]) -> DrawData {
+    let scale = |v: i32| v as f32 / 100.;
+
+    let vertices = state
+        .take(n)
+        .filter_map(|c| c)
+        .map(|([x, y, z], c)| Vertex::new([scale(x), scale(y), scale(z)], colors[c as usize % colors.len()]))
+        .collect::<Vec<Vertex>>();
+
+    match mode {
+        PlotMode::Lines => DrawData {
+            indices: (1u32..).take((vertices.len() - 1) * 2).map(|i| i / 2).collect(),
+            vertices,
+            primitive: Primitive::Lines,
+        },
+        PlotMode::Points => DrawData {
+            indices: (0..vertices.len() as u32).collect(),
+            vertices,
+            primitive: Primitive::Points,
+        },
+    }
+}
+
+/// Generate a palette
+fn random_color_lut(
+    rng: &mut impl Rng, 
+    max_colors: u32, 
+    min_bright: f32, 
+    max_bright: f32
+) -> Vec<[f32; 3]> {
+    let mut colors = vec![];
+    for _ in 0..rng.gen_range(1..max_colors) {
+        let mut color = [
+            rng.gen_range(min_bright..max_bright),
+            rng.gen_range(min_bright..max_bright),
+            rng.gen_range(min_bright..max_bright),
+        ];
+        let idx = rng.gen_range(0..color.len());
+        color[idx] = 0.;
+        colors.push(color);
+    }
+    colors
+}
+
+/// Convert a binary string into a list of instructions
 fn decode(v: &[u8]) -> Vec<Instruction> {
     v.iter().map(|&i| i.into()).collect()
 }
