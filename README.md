@@ -7,3 +7,4 @@ cargo run --release -- --help
 ```
 
 ![Example](example.png)
+![Example](example2.png)
