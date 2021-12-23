@@ -1,5 +1,6 @@
 use structopt::StructOpt;
-use watertender::trivial::*;
+use mutautomata::DrawData;
+mod draw;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "MutAutomata", about = "Builder of spindly structures and such")]
@@ -15,5 +16,5 @@ struct Opt {
 fn main() {
     let opt = Opt::from_args();
     let objects = mutautomata::generate(opt.sub);
-    draw(objects, opt.vr).expect("Draw failed");
+    draw::draw(objects, opt.vr).expect("Draw failed");
 }

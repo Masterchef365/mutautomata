@@ -450,6 +450,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "idek"
+version = "0.1.0"
+source = "git+https://github.com/Masterchef365/idek.git?rev=2124218#2124218c87c1ec8c8e87bc8ae8841aafbfd6c96b"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "slotmap",
+ "watertender",
+]
+
+[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -607,9 +618,9 @@ name = "mutautomata"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "idek",
  "rand",
  "structopt",
- "watertender",
 ]
 
 [[package]]
@@ -1049,6 +1060,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "slotmap"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1e08e261d0e8f5c43123b7adf3e4ca1690d655377ac93a03b2c9d3e98de1342"
+dependencies = [
+ "version_check",
+]
+
+[[package]]
 name = "smallvec"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1223,7 +1243,7 @@ checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
 [[package]]
 name = "watertender"
 version = "0.1.0"
-source = "git+https://github.com/Masterchef365/watertender.git?branch=main#55cebc1ed63de3d949b4ee796ece1b047f68fc95"
+source = "git+https://github.com/Masterchef365/watertender.git?branch=idek_tweaks#47e237dbf77777ac7d8bc685e76721e7d1f7da73"
 dependencies = [
  "anyhow",
  "bytemuck",

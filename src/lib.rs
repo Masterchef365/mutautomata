@@ -1,6 +1,5 @@
 use rand::prelude::*;
-use watertender::trivial::*;
-use watertender::vertex::Vertex;
+use idek::prelude::{Vertex, Primitive};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -198,6 +197,13 @@ impl Iterator for State {
 
         Some(self.do_plot.then(|| (self.pos, self.color)))
     }
+}
+
+/// A mesh and the primitive it is constructed of
+pub struct DrawData {
+    pub indices: Vec<u32>,
+    pub vertices: Vec<Vertex>,
+    pub primitive: Primitive,
 }
 
 /// Create a hash of the given string
