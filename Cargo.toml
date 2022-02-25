@@ -6,7 +6,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-watertender = { path = "../watertender" }
+watertender = { git = "https://github.com/Masterchef365/watertender.git", rev = "55cebc1" }
 rand = { version = "0.8", features = ["small_rng"] }
 deflate = "0.9"
 bytemuck = "1.7"
