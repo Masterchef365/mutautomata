@@ -25,8 +25,8 @@ impl App<Vec<DrawData>> for Mutautomata {
         )?;
 
         let lines_shader = ctx.shader(
-            &DEFAULT_VERTEX_SHADER,
-            &DEFAULT_FRAGMENT_SHADER,
+            include_bytes!("shaders/unlit.vert.spv"),
+            include_bytes!("shaders/unlit.frag.spv"),
             Primitive::Lines,
         )?;
 
